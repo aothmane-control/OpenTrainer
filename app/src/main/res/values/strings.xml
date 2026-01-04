@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kickr Trainer</string>
+    <string name="scan_for_devices">Scan for Devices</string>
+    <string name="stop_scan">Stop Scan</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connected">Connected</string>
+    <string name="connecting">Connecting…</string>
+    <string name="scanning">Scanning…</string>
+    <string name="trainer_data">Trainer Data</string>
+    <string name="power">POWER</string>
+    <string name="cadence">CADENCE</string>
+    <string name="speed">SPEED</string>
+    <string name="heart_rate">HEART RATE</string>
+    <string name="zero_w">0 W</string>
+    <string name="zero_rpm">0 RPM</string>
+    <string name="zero_kmh">0.0 km/h</string>
+    <string name="zero_bpm">0 BPM</string>
+    <string name="power_format">%d W</string>
+    <string name="cadence_format">%d RPM</string>
+    <string name="speed_format">%.1f km/h</string>
+    <string name="heart_rate_format">%d BPM</string>
+    <string name="bluetooth_not_supported">Bluetooth is not supported on this device</string>
+    <string name="bluetooth_disabled">Bluetooth is disabled. Please enable it.</string>
+    <string name="permission_required">Bluetooth permissions are required to scan for devices</string>
+</resources>
