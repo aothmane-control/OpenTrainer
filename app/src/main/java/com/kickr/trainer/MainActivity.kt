@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
@@ -25,6 +26,7 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.google.android.material.card.MaterialCardView
 import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
+import com.kickr.trainer.model.Workout
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -34,6 +36,8 @@ class MainActivity : AppCompatActivity() {
     
     private lateinit var scanButton: Button
     private lateinit var disconnectButton: Button
+    private lateinit var setupWorkoutButton: Button
+    private lateinit var stopWorkoutButton: Button
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
     private lateinit var dataScrollView: NestedScrollView
@@ -43,11 +47,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var heartRateTextView: TextView
     private lateinit var powerChart: LineChart
     private lateinit var speedChart: LineChart
+    private lateinit var workoutStatusCard: MaterialCardView
+    private lateinit var workoutIntervalTextView: TextView
+    private lateinit var workoutResistanceTextView: TextView
+    private lateinit var workoutTimeTextView: TextView
     
     private val powerDataPoints = mutableListOf<Entry>()
     private val speedDataPoints = mutableListOf<Entry>()
     private var startTime: Long = 0
     private val maxDataPoints = 200 // 20 seconds at ~10Hz
+    
+    private var activeWorkout: Workout? = null
+    private var workoutTimer: CountDownTimer? = null
+    private var workoutElapsedSeconds = 0
 
     private val requestBluetoothPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -73,6 +85,26 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.bluetooth_disabled, Toast.LENGTH_SHORT).show()
         }
     }
+    
+    private val workoutSetupLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            result.data?.let { data ->
+                val durationMinutes = data.getIntExtra("durationMinutes", 0)
+                val durations = data.getIntArrayExtra("durations") ?: IntArray(0)
+                val resistances = data.getIntArrayExtra("resistances") ?: IntArray(0)
+                
+                if (durations.isNotEmpty() && resistances.isNotEmpty()) {
+                    val intervals = durations.zip(resistances).map { (duration, resistance) ->
+                        com.kickr.trainer.model.WorkoutInterval(duration, resistance)
+                    }
+                    activeWorkout = Workout(durationMinutes * 60, intervals)
+                    startWorkout()
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,6 +121,8 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         scanButton = findViewById(R.id.scanButton)
         disconnectButton = findViewById(R.id.disconnectButton)
+        setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
+        stopWorkoutButton = findViewById(R.id.stopWorkoutButton)
         connectionStatusTextView = findViewById(R.id.connectionStatusTextView)
         devicesRecyclerView = findViewById(R.id.devicesRecyclerView)
         dataScrollView = findViewById(R.id.dataScrollView)
@@ -98,6 +132,10 @@ class MainActivity : AppCompatActivity() {
         heartRateTextView = findViewById(R.id.heartRateTextView)
         powerChart = findViewById(R.id.powerChart)
         speedChart = findViewById(R.id.speedChart)
+        workoutStatusCard = findViewById(R.id.workoutStatusCard)
+        workoutIntervalTextView = findViewById(R.id.workoutIntervalTextView)
+        workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
+        workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
         
         setupCharts()
     }
@@ -297,6 +335,74 @@ class MainActivity : AppCompatActivity() {
         disconnectButton.setOnClickListener {
             bluetoothService.disconnect()
         }
+        
+        setupWorkoutButton.setOnClickListener {
+            val intent = Intent(this, WorkoutSetupActivity::class.java)
+            workoutSetupLauncher.launch(intent)
+        }
+        
+        stopWorkoutButton.setOnClickListener {
+            stopWorkout()
+        }
+    }
+    
+    private fun startWorkout() {
+        val workout = activeWorkout ?: return
+        
+        workoutElapsedSeconds = 0
+        workoutStatusCard.visibility = View.VISIBLE
+        setupWorkoutButton.visibility = View.GONE
+        stopWorkoutButton.visibility = View.VISIBLE
+        
+        // Start timer that ticks every second
+        workoutTimer = object : CountDownTimer(workout.totalDuration * 1000L, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                workoutElapsedSeconds++
+                
+                val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
+                if (currentInterval != null) {
+                    val intervalIndex = workout.intervals.indexOf(currentInterval) + 1
+                    
+                    // Update UI
+                    workoutIntervalTextView.text = getString(
+                        R.string.workout_interval_format,
+                        intervalIndex,
+                        workout.intervals.size
+                    )
+                    workoutResistanceTextView.text = getString(
+                        R.string.workout_resistance_format,
+                        currentInterval.resistance
+                    )
+                    
+                    val remaining = workout.getRemainingTime(workoutElapsedSeconds)
+                    val mins = remaining / 60
+                    val secs = remaining % 60
+                    workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
+                    
+                    // Send resistance command to trainer
+                    bluetoothService.setResistance(currentInterval.resistance)
+                }
+            }
+            
+            override fun onFinish() {
+                Toast.makeText(this@MainActivity, R.string.workout_complete, Toast.LENGTH_SHORT).show()
+                stopWorkout()
+            }
+        }.start()
+    }
+    
+    private fun stopWorkout() {
+        workoutTimer?.cancel()
+        workoutTimer = null
+        activeWorkout = null
+        workoutElapsedSeconds = 0
+        
+        workoutStatusCard.visibility = View.GONE
+        setupWorkoutButton.visibility = View.VISIBLE
+        stopWorkoutButton.visibility = View.GONE
+        
+        // Reset resistance to 0
+        bluetoothService.setResistance(0)
     }
 
     private fun checkPermissionsAndScan() {
@@ -347,6 +453,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopWorkout()
         bluetoothService.stopScan()
         bluetoothService.disconnect()
     }

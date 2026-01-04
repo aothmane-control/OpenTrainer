@@ -71,6 +71,60 @@
             android:orientation="vertical">
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/workoutStatusCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/md_theme_light_primaryContainer"
+                app:cardCornerRadius="8dp"
+                app:cardElevation="4dp"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/workout_active"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/md_theme_light_onPrimaryContainer" />
+
+                    <TextView
+                        android:id="@+id/workoutIntervalTextView"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textSize="14sp"
+                        android:textColor="@color/md_theme_light_onPrimaryContainer"
+                        tools:text="Interval 1 of 3" />
+
+                    <TextView
+                        android:id="@+id/workoutResistanceTextView"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textSize="14sp"
+                        android:textColor="@color/md_theme_light_onPrimaryContainer"
+                        tools:text="Target: 50%" />
+
+                    <TextView
+                        android:id="@+id/workoutTimeTextView"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textSize="14sp"
+                        android:textColor="@color/md_theme_light_onPrimaryContainer"
+                        tools:text="Time: 5:00" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/dataCardView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -259,10 +313,34 @@
     </androidx.core.widget.NestedScrollView>
 
     <Button
+        android:id="@+id/setupWorkoutButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/setup_workout"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/dataScrollView"
+        app:layout_constraintBottom_toTopOf="@id/disconnectButton" />
+    
+    <Button
+        android:id="@+id/stopWorkoutButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/stop_workout"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/dataScrollView"
+        app:layout_constraintBottom_toTopOf="@id/disconnectButton"
+        tools:visibility="visible" />
+
+    <Button
         android:id="@+id/disconnectButton"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         android:layout_marginBottom="16dp"
         android:text="@string/disconnect"
         android:visibility="gone"

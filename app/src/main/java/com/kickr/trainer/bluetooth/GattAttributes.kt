@@ -9,6 +9,12 @@ object GattAttributes {
     val CYCLING_POWER_SERVICE: UUID = UUID.fromString("00001818-0000-1000-8000-00805f9b34fb")
     val CYCLING_POWER_MEASUREMENT: UUID = UUID.fromString("00002a63-0000-1000-8000-00805f9b34fb")
     val CYCLING_POWER_FEATURE: UUID = UUID.fromString("00002a65-0000-1000-8000-00805f9b34fb")
+    val CYCLING_POWER_CONTROL_POINT: UUID = UUID.fromString("00002a66-0000-1000-8000-00805f9b34fb")
+    
+    // FitnessMachine Service (for resistance control on some trainers)
+    val FITNESS_MACHINE_SERVICE: UUID = UUID.fromString("00001826-0000-1000-8000-00805f9b34fb")
+    val FITNESS_MACHINE_CONTROL_POINT: UUID = UUID.fromString("00002ad9-0000-1000-8000-00805f9b34fb")
+    val INDOOR_BIKE_DATA: UUID = UUID.fromString("00002ad2-0000-1000-8000-00805f9b34fb")
     
     // Cycling Speed and Cadence Service
     val CYCLING_SPEED_CADENCE_SERVICE: UUID = UUID.fromString("00001816-0000-1000-8000-00805f9b34fb")

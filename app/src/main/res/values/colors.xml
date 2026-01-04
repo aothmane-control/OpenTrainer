@@ -8,4 +8,7 @@
     <color name="md_theme_onSecondary">#FFFFFF</color>
     <color name="md_theme_secondaryContainer">#DAE2F9</color>
     <color name="md_theme_onSecondaryContainer">#131C2B</color>
+    
+    <color name="md_theme_light_primaryContainer">#D8E2FF</color>
+    <color name="md_theme_light_onPrimaryContainer">#001A41</color>
 </resources>

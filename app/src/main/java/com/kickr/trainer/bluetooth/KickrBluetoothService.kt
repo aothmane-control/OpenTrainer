@@ -177,6 +177,30 @@ class KickrBluetoothService(private val context: Context) {
         _connectionState.value = ConnectionState.Disconnected
     }
     
+    fun setResistance(resistancePercent: Int) {
+        val gatt = bluetoothGatt ?: return
+        
+        // Try Fitness Machine Service first (more common for resistance control)
+        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
+                // Set Target Resistance Level command (opcode 0x04)
+                // Resistance level is in 0.1 percent increments
+                val resistanceValue = (resistancePercent * 10).toShort()
+                val command = byteArrayOf(
+                    0x04.toByte(), // Opcode: Set Target Resistance Level
+                    (resistanceValue.toInt() and 0xFF).toByte(),
+                    ((resistanceValue.toInt() shr 8) and 0xFF).toByte()
+                )
+                characteristic.value = command
+                gatt.writeCharacteristic(characteristic)
+                Log.d(TAG, "Set resistance to $resistancePercent%")
+                return
+            }
+        }
+        
+        Log.w(TAG, "Resistance control not available on this device")
+    }
+    
     private fun enableNotifications(gatt: BluetoothGatt) {
         // Enable Cycling Power notifications
         gatt.getService(GattAttributes.CYCLING_POWER_SERVICE)?.let { service ->
