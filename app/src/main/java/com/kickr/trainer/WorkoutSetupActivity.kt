@@ -260,17 +260,55 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 return
             }
             
-            // Show selection dialog
+            // Show selection dialog with delete option
             AlertDialog.Builder(this)
                 .setTitle("Select Workout")
                 .setItems(workoutNames.toTypedArray()) { _, which ->
                     val selectedName = workoutNames[which]
-                    loadWorkoutByName(selectedName, workoutsMap.getJSONObject(selectedName))
+                    showWorkoutOptionsDialog(selectedName, workoutsMap)
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to load workouts: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun showWorkoutOptionsDialog(name: String, workoutsMap: JSONObject) {
+        AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(arrayOf("Load", "Delete")) { _, which ->
+                when (which) {
+                    0 -> loadWorkoutByName(name, workoutsMap.getJSONObject(name))
+                    1 -> confirmDeleteWorkout(name)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun confirmDeleteWorkout(name: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete Workout")
+            .setMessage("Are you sure you want to delete '$name'?")
+            .setPositiveButton("Delete") { _, _ ->
+                deleteWorkout(name)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun deleteWorkout(name: String) {
+        try {
+            val workoutsJson = prefs.getString("workouts", null) ?: return
+            val workoutsMap = JSONObject(workoutsJson)
+            
+            workoutsMap.remove(name)
+            
+            prefs.edit().putString("workouts", workoutsMap.toString()).apply()
+            Toast.makeText(this, "Workout '$name' deleted!", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to delete workout: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
     

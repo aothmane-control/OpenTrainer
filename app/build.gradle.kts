@@ -27,6 +27,13 @@ android {
         }
     }
     
+    applicationVariants.all {
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = 
+                "OpenTrainer-${versionName}.apk"
+        }
+    }
+    
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8

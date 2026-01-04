@@ -521,8 +521,14 @@ class MainActivity : AppCompatActivity() {
             fillAlpha = 50
         }
         
+        // Calculate max resistance and set Y-axis to 110% of max
+        val maxResistance = workout.intervals.maxOfOrNull { it.resistance } ?: 100
+        val yMax = maxResistance * 1.1f
+        
         workoutProfileChart.data = LineData(dataSet)
         workoutProfileChart.xAxis.axisMaximum = workout.totalDuration.toFloat()
+        workoutProfileChart.axisLeft.axisMaximum = yMax
+        workoutProfileChart.axisRight.axisMaximum = yMax
         workoutProfileChart.notifyDataSetChanged()
         workoutProfileChart.invalidate()
     }
@@ -549,10 +555,14 @@ class MainActivity : AppCompatActivity() {
             fillAlpha = 50
         }
         
+        // Calculate max resistance and set Y-axis to 110% of max
+        val maxResistance = workout.intervals.maxOfOrNull { it.resistance } ?: 100
+        val yMax = maxResistance * 1.1f
+        
         // Add progress indicator line
         val progressEntries = listOf(
             Entry(elapsedSeconds.toFloat(), 0f),
-            Entry(elapsedSeconds.toFloat(), 100f)
+            Entry(elapsedSeconds.toFloat(), yMax)
         )
         
         val progressDataSet = LineDataSet(progressEntries, "Current Position").apply {
@@ -565,6 +575,8 @@ class MainActivity : AppCompatActivity() {
         }
         
         workoutProfileChart.data = LineData(profileDataSet, progressDataSet)
+        workoutProfileChart.axisLeft.axisMaximum = yMax
+        workoutProfileChart.axisRight.axisMaximum = yMax
         workoutProfileChart.notifyDataSetChanged()
         workoutProfileChart.invalidate()
     }

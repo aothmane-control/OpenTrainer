@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Kickr Trainer</string>
+    <string name="app_name">OpenTrainer</string>
     <string name="scan_for_devices">Scan for Devices</string>
     <string name="stop_scan">Stop Scan</string>
     <string name="disconnect">Disconnect</string>
