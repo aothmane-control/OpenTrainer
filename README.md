@@ -4,6 +4,8 @@
 
 An Android application that connects to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy (BLE) to display real-time training data with customizable workout resistance profiles and GPX-based elevation workouts.
 
+![OpenTrainer Demo](figs/example.gif)
+
 ## 📥 Installation
 
 Download the latest APK from the [Releases](https://github.com/aothmane-control/OpenTrainer/releases) page.

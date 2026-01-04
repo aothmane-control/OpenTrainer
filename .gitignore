@@ -18,3 +18,4 @@ out/
 gradlew
 gradlew.bat
 gradle/wrapper/gradle-wrapper.jar
+*.mp4
