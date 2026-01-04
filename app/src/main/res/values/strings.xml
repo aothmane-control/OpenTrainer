@@ -24,4 +24,6 @@
     <string name="bluetooth_not_supported">Bluetooth is not supported on this device</string>
     <string name="bluetooth_disabled">Bluetooth is disabled. Please enable it.</string>
     <string name="permission_required">Bluetooth permissions are required to scan for devices</string>
+    <string name="power_chart">Power (Last 20s)</string>
+    <string name="speed_chart">Speed (Last 20s)</string>
 </resources>
