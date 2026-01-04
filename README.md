@@ -12,7 +12,7 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
 
 ## ✨ Why OpenTrainer?
 
-- **🌟 Completely Open Source** - All code is available under MIT License
+- **🌟 Completely Open Source** - All code is available under CC BY-NC 4.0 License
 - **🔐 Your Data Stays Private** - No user accounts, no profiles, no cloud services
 - **📶 Works Offline** - No internet connection required for training (map tiles only needed when viewing maps)
 - **🚫 Zero Tracking** - No analytics, no telemetry, no data collection
