@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Amine Othmane
+ * All rights reserved.
+ */
+
 package com.kickr.trainer
 
 import android.Manifest
@@ -9,10 +14,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.view.View
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.widget.NestedScrollView
@@ -170,6 +178,10 @@ class MainActivity : AppCompatActivity() {
         }
         
         setContentView(R.layout.activity_main)
+
+        // Setup toolbar
+        val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
 
         bluetoothService = KickrBluetoothService(this)
         workoutStorageManager = WorkoutStorageManager(this)
@@ -1146,5 +1158,44 @@ class MainActivity : AppCompatActivity() {
         bluetoothService.stopScan()
         bluetoothService.disconnect()
         mapView.onDetach()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_about -> {
+                showAboutDialog()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun showAboutDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("About OpenTrainer")
+            .setMessage("""
+                OpenTrainer v2.0
+                
+                A free and open-source cycling training app for Wahoo Kickr and compatible smart trainers.
+                
+                Copyright © 2026 Amine Othmane
+                All rights reserved.
+                
+                Features:
+                • Real-time power, cadence, and speed monitoring
+                • Custom resistance workouts
+                • GPX-based elevation workouts
+                • Workout history and analytics
+                • 100% offline - no data collection
+                
+                This application is open source and respects your privacy.
+            """.trimIndent())
+            .setPositiveButton("OK", null)
+            .show()
     }
 }

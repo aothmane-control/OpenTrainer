@@ -39,6 +39,14 @@
         </LinearLayout>
 
         <ImageButton
+            android:id="@+id/editIntervalButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_edit"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Edit interval" />
+
+        <ImageButton
             android:id="@+id/deleteIntervalButton"
             android:layout_width="48dp"
             android:layout_height="48dp"

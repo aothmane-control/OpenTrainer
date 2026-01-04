@@ -23,7 +23,7 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
 - 📊 Display real-time data:
   - Power (Watts)
   - Cadence (RPM)
-  - Speed (km/h)
+  - Speed (km/h) - calculated from power
   - Heart Rate (BPM)
 - 📈 Real-time charts:
   - Power history (last 20 seconds)
@@ -32,6 +32,8 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
   - Create custom resistance profiles with intervals
   - Set total workout duration
   - Define multiple intervals with specific duration and resistance percentage
+  - Edit individual intervals without deleting others
+  - Scrollable interval list for managing many intervals
   - Visual resistance profile chart showing the entire workout plan
   - Real-time progress indicator during workout execution
   - Automatic resistance control throughout the workout
@@ -40,6 +42,12 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
   - Load previously saved workouts
   - Delete unwanted workout profiles
   - Multiple workout profiles support
+- 📊 **Workout History & Analytics:**
+  - Automatic workout data recording (power, speed, cadence, heart rate, resistance, distance)
+  - Complete workout summary with interactive charts after each session
+  - Historical workout viewer with searchable list
+  - Share workout results
+  - All data stored locally on device
 - 🗺️ **GPX Track Viewer & Elevation-Based Workouts:**
   - Load and visualize GPX files on OpenStreetMap
   - **Start GPX-based workouts with automatic resistance control**
@@ -50,8 +58,10 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
   - Support for heart rate, cadence, and power data in GPX
   - Interactive map with zoom and pan
   - Automatic calculation of gradient and resistance mapping
-- 📱 Modern Material Design UI
+  - Distance tracking for all workout types
+- 📱 Modern Material Design UI with app toolbar
 - 🔄 Automatic data updates
+- ℹ️ About dialog with copyright information
 
 ## Requirements
 
@@ -130,21 +140,41 @@ The app requires the following permissions:
   - Red dashed line: Current position in the workout
   - Dynamic Y-axis: Scaled to 110% of maximum resistance for better visibility
 - Resistance is automatically adjusted at each interval transition
+- Distance is tracked automatically for all workouts
+- All data (power, speed, cadence, heart rate, resistance, distance) is recorded every second
 - Tap "Stop Workout" to end early
+
+### After Workout
+- Workout summary screen displays automatically with:
+  - Duration, distance, and average power statistics
+  - Complete power evolution chart
+  - Complete speed evolution chart
+  - Complete resistance profile chart
+- Share your workout results
+- Access workout history anytime from the "View History" button
 
 ### Managing Workout Profiles
 - **Save**: After configuring a workout, it's automatically saved with the given name
 - **Load**: Tap "Load Workout" to see all saved profiles, then select one to load or delete
+- **Edit**: Use the edit button on any interval to modify duration and resistance
 - **Delete**: When loading, choose a workout and select "Delete" with confirmation
+
+### Viewing Workout History
+- Tap "View History" to see all completed workouts
+- Workouts are sorted by date (newest first)
+- Each entry shows: name, type, date, duration, distance, and average power
+- Tap any workout to view complete details and charts
 
 ## Architecture
 
 - **Kotlin** - Primary programming language
 - **Coroutines & Flow** - For asynchronous operations and reactive data streams
-- **Material Design 3** - Modern UI components
+- **Material Design 3** - Modern UI components with toolbar
 - **MVVM Pattern** - Clean separation of concerns
-- **MPAndroidChart** - Real-time data visualization
+- **MPAndroidChart** - Real-time data visualization and workout analytics
+- **osmdroid** - OpenStreetMap integration for GPX visualization
 - **SharedPreferences + JSON** - Workout profile persistence
+- **Local JSON Storage** - Workout history persistence
 
 ## Project Structure
 
@@ -152,17 +182,29 @@ The app requires the following permissions:
 app/src/main/java/com/kickr/trainer/
 ├── MainActivity.kt                 # Main UI controller with workout execution
 ├── WorkoutSetupActivity.kt         # Workout configuration and management
+├── GpxMapActivity.kt              # GPX file viewer and workout starter
+├── WorkoutSummaryActivity.kt      # Post-workout summary and charts
+├── WorkoutHistoryActivity.kt      # Workout history viewer
+├── GpxWorkoutHolder.kt            # Singleton for GPX track data
 ├── adapter/
 │   ├── DeviceAdapter.kt           # RecyclerView adapter for device list
-│   └── IntervalAdapter.kt         # RecyclerView adapter for workout intervals
+│   ├── IntervalAdapter.kt         # RecyclerView adapter for workout intervals
+│   └── WorkoutHistoryAdapter.kt   # RecyclerView adapter for workout history
 ├── bluetooth/
 │   ├── KickrBluetoothService.kt   # BLE service management & resistance control
 │   └── GattAttributes.kt          # Bluetooth GATT UUIDs
-└── model/
-    ├── TrainerData.kt             # Training data model
-    ├── KickrDevice.kt             # Device model
-    ├── Workout.kt                 # Workout profile model
-    └── WorkoutInterval.kt         # Interval model
+├── model/
+│   ├── TrainerData.kt             # Training data model
+│   ├── KickrDevice.kt             # Device model
+│   ├── Workout.kt                 # Workout profile model
+│   ├── WorkoutInterval.kt         # Interval model
+│   ├── GpxTrack.kt                # GPX track data model
+│   ├── GpxTrackPoint.kt           # GPX point with elevation data
+│   ├── WorkoutDataPoint.kt        # Single workout data recording
+│   └── WorkoutHistory.kt          # Complete workout history record
+└── utils/
+    ├── GpxParser.kt               # GPX file parsing
+    └── WorkoutStorageManager.kt   # Workout history storage
 ```
 
 ## Technical Details
@@ -213,6 +255,40 @@ Workouts are stored in SharedPreferences as JSON:
 }
 ```
 
+### Workout History Storage
+
+Completed workouts are saved as individual JSON files in the app's internal storage:
+- File format: `workout_YYYYMMDD_HHMMSS.json`
+- Location: App internal files directory
+- Each file contains:
+  - Workout metadata: name, type, start/end timestamps
+  - Statistics: average and maximum values for power, speed, cadence, heart rate
+  - Data points: Complete second-by-second recordings including:
+    - timestamp, elapsedSeconds, power, speed, cadence, heartRate, resistance, distance
+
+Example structure:
+```json
+{
+  "name": "Morning Ride",
+  "type": "RESISTANCE",
+  "startTime": 1735000000000,
+  "endTime": 1735003600000,
+  "averagePower": 180.5,
+  "maxPower": 320.0,
+  "averageSpeed": 25.3,
+  "maxSpeed": 38.2,
+  "averageCadence": 85,
+  "maxCadence": 110,
+  "averageHeartRate": 145,
+  "maxHeartRate": 175,
+  "totalDistance": 15.5,
+  "dataPoints": [
+    {"timestamp": 1735000000000, "elapsedSeconds": 0, "power": 150.0, ...},
+    {"timestamp": 1735000001000, "elapsedSeconds": 1, "power": 155.0, ...}
+  ]
+}
+```
+
 ## Troubleshooting
 
 **Device not found:**
@@ -246,10 +322,3 @@ This project is open source and available under the MIT License.
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Acknowledgments
-
-- Built for Wahoo Kickr Core trainers and compatible smart trainers
-- Uses Bluetooth SIG standard services and Fitness Machine Service (FTMS)
-- Chart visualization powered by MPAndroidChart
-- Inspired by the need for a simple, native Android training app with programmable workouts

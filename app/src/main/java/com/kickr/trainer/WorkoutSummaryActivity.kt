@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Amine Othmane
+ * All rights reserved.
+ */
+
 package com.kickr.trainer
 
 import android.graphics.Color

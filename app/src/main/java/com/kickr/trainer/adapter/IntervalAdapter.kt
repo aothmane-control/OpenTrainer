@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Amine Othmane
+ * All rights reserved.
+ */
+
 package com.kickr.trainer.adapter
 
 import android.annotation.SuppressLint
@@ -11,7 +16,8 @@ import com.kickr.trainer.R
 import com.kickr.trainer.model.WorkoutInterval
 
 class IntervalAdapter(
-    private val onDeleteClick: (Int) -> Unit
+    private val onDeleteClick: (Int) -> Unit,
+    private val onEditClick: (Int, WorkoutInterval) -> Unit
 ) : RecyclerView.Adapter<IntervalAdapter.IntervalViewHolder>() {
 
     private var intervals: List<WorkoutInterval> = emptyList()
@@ -19,12 +25,17 @@ class IntervalAdapter(
     inner class IntervalViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val intervalNumberTextView: TextView = itemView.findViewById(R.id.intervalNumberTextView)
         private val intervalDetailsTextView: TextView = itemView.findViewById(R.id.intervalDetailsTextView)
+        private val editButton: ImageButton = itemView.findViewById(R.id.editIntervalButton)
         private val deleteButton: ImageButton = itemView.findViewById(R.id.deleteIntervalButton)
 
         fun bind(interval: WorkoutInterval, position: Int) {
             intervalNumberTextView.text = "Interval ${position + 1}"
             val durationMinutes = interval.duration / 60.0
             intervalDetailsTextView.text = "%.1f min @ ${interval.resistance}%%".format(durationMinutes)
+            
+            editButton.setOnClickListener {
+                onEditClick(position, interval)
+            }
             
             deleteButton.setOnClickListener {
                 onDeleteClick(position)

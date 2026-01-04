@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Amine Othmane
+ * All rights reserved.
+ */
+
 package com.kickr.trainer
 
 import android.content.Context
@@ -69,9 +74,14 @@ class WorkoutSetupActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        intervalAdapter = IntervalAdapter { position ->
-            deleteInterval(position)
-        }
+        intervalAdapter = IntervalAdapter(
+            onDeleteClick = { position ->
+                deleteInterval(position)
+            },
+            onEditClick = { position, interval ->
+                editInterval(position, interval)
+            }
+        )
         
         intervalsRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@WorkoutSetupActivity)
@@ -157,6 +167,57 @@ class WorkoutSetupActivity : AppCompatActivity() {
         intervalAdapter.updateIntervals(intervals)
         updateRemainingTime()
         checkWorkoutComplete()
+    }
+    
+    private fun editInterval(position: Int, interval: WorkoutInterval) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_interval, null)
+        val durationEditText = dialogView.findViewById<TextInputEditText>(R.id.editIntervalDurationEditText)
+        val resistanceEditText = dialogView.findViewById<TextInputEditText>(R.id.editIntervalResistanceEditText)
+        
+        // Pre-fill with current values
+        durationEditText.setText((interval.duration / 60.0).toString())
+        resistanceEditText.setText(interval.resistance.toString())
+        
+        AlertDialog.Builder(this)
+            .setTitle("Edit Interval ${position + 1}")
+            .setView(dialogView)
+            .setPositiveButton("Save") { _, _ ->
+                val durationMinutes = durationEditText.text.toString().toDoubleOrNull()
+                val resistance = resistanceEditText.text.toString().toIntOrNull()
+                
+                if (durationMinutes == null || durationMinutes <= 0) {
+                    Toast.makeText(this, "Please enter a valid duration", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                
+                if (resistance == null || resistance < 0 || resistance > 100) {
+                    Toast.makeText(this, "Resistance must be between 0 and 100", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                
+                val newDurationSeconds = (durationMinutes * 60).toInt()
+                
+                // Check if new duration fits
+                val currentTotal = intervals.sumOf { it.duration } - interval.duration
+                if (currentTotal + newDurationSeconds > totalDurationSeconds) {
+                    Toast.makeText(
+                        this,
+                        "Updated interval would exceed total workout duration",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@setPositiveButton
+                }
+                
+                // Update the interval
+                intervals[position] = WorkoutInterval(newDurationSeconds, resistance)
+                intervalAdapter.updateIntervals(intervals)
+                updateRemainingTime()
+                checkWorkoutComplete()
+                
+                Toast.makeText(this, "Interval updated", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun updateRemainingTime() {

@@ -2,14 +2,14 @@
 
 ## 🔓 Open Source | 🔒 Privacy First | 📶 Offline-Ready
 
-A complete Android application for connecting to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy, displaying real-time training metrics, and executing programmable resistance workouts with GPX-based elevation profiles and interactive map visualization.
+A complete Android application for connecting to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy, displaying real-time training metrics, executing programmable resistance workouts with GPX-based elevation profiles, interactive map visualization, and comprehensive workout analytics with historical tracking.
 
 ## ✨ Core Principles
 
 - **100% Open Source** - MIT License, all code publicly available
 - **Privacy Focused** - No user accounts, no cloud services, no data collection
 - **Offline Training** - Works completely offline (internet only for map tiles)
-- **Your Data Stays Local** - All workout profiles and data stored on device
+- **Your Data Stays Local** - All workout profiles and history stored on device
 - **Zero Tracking** - No analytics, no telemetry, no external connections
 
 ## Overview
@@ -26,25 +26,44 @@ kickr_android/
 │       └── main/
 │           ├── AndroidManifest.xml               # App manifest with Bluetooth permissions
 │           ├── java/com/kickr/trainer/
-│           │   ├── MainActivity.kt               # Main UI controller with workout execution (642 lines)
-│           │   ├── WorkoutSetupActivity.kt       # Workout configuration & management (340+ lines)
+│           │   ├── MainActivity.kt               # Main UI controller with workout execution (1198 lines)
+│           │   ├── WorkoutSetupActivity.kt       # Workout configuration & management (408 lines)
+│           │   ├── GpxMapActivity.kt             # GPX file viewer with interactive map
+│           │   ├── WorkoutSummaryActivity.kt     # Post-workout summary with charts (188 lines)
+│           │   ├── WorkoutHistoryActivity.kt     # Workout history viewer (82 lines)
+│           │   ├── GpxWorkoutHolder.kt           # Singleton for GPX track data
 │           │   ├── adapter/
 │           │   │   ├── DeviceAdapter.kt          # RecyclerView adapter for BLE devices
-│           │   │   └── IntervalAdapter.kt        # RecyclerView adapter for workout intervals
+│           │   │   ├── IntervalAdapter.kt        # RecyclerView adapter for workout intervals
+│           │   │   └── WorkoutHistoryAdapter.kt  # RecyclerView adapter for workout history
 │           │   ├── bluetooth/
 │           │   │   ├── GattAttributes.kt         # Bluetooth GATT UUIDs (includes FTMS)
 │           │   │   └── KickrBluetoothService.kt  # Core BLE service with resistance control (426 lines)
-│           │   └── model/
-│           │       ├── KickrDevice.kt            # Device data model
-│           │       ├── TrainerData.kt            # Training metrics data model
-│           │       ├── Workout.kt                # Workout profile model with validation
-│           │       └── WorkoutInterval.kt        # Workout interval model
+│           │   ├── model/
+│           │   │   ├── KickrDevice.kt            # Device data model
+│           │   │   ├── TrainerData.kt            # Training metrics data model
+│           │   │   ├── Workout.kt                # Workout profile model with validation
+│           │   │   ├── WorkoutInterval.kt        # Workout interval model
+│           │   │   ├── GpxTrack.kt               # GPX track data model
+│           │   │   ├── GpxTrackPoint.kt          # GPX point with elevation data
+│           │   │   ├── WorkoutDataPoint.kt       # Single workout data recording (18 lines)
+│           │   │   └── WorkoutHistory.kt         # Complete workout history record (47 lines)
+│           │   └── utils/
+│           │       ├── GpxParser.kt              # GPX file parsing
+│           │       └── WorkoutStorageManager.kt  # Workout history storage (132 lines)
 │           └── res/
 │               ├── layout/
-│               │   ├── activity_main.xml         # Main screen with charts & workout status (386 lines)
-│               │   ├── activity_workout_setup.xml# Workout configuration UI (234 lines)
+│               │   ├── activity_main.xml         # Main screen with charts & workout status (467 lines)
+│               │   ├── activity_workout_setup.xml# Workout configuration UI (260 lines)
+│               │   ├── activity_gpx_map.xml      # GPX map viewer layout
+│               │   ├── activity_workout_summary.xml # Workout summary with charts (231 lines)
+│               │   ├── activity_workout_history.xml # Workout history list (63 lines)
 │               │   ├── item_device.xml           # Device list item layout
-│               │   └── item_interval.xml         # Interval list item layout
+│               │   ├── item_interval.xml         # Interval list item layout with edit button
+│               │   ├── item_workout_history.xml  # Workout history card layout (104 lines)
+│               │   └── dialog_edit_interval.xml  # Edit interval dialog (52 lines)
+│               ├── menu/
+│               │   └── menu_main.xml             # Main toolbar menu (About action)
 │               ├── mipmap-*/                     # Launcher icons (all densities)
 │               │   ├── ic_launcher.png
 │               │   └── ic_launcher_round.png
@@ -64,6 +83,21 @@ kickr_android/
 ├── settings.gradle.kts                           # Gradle settings with MPAndroidChart repo
 ├── gradle.properties                             # Gradle properties
 ├── .gitignore                                    # Git ignore rules
+├── README.md                                     # Comprehensive user documentation
+├── PROJECT_SUMMARY.md                            # This file
+├── CHANGELOG.md                                  # Version history and changes
+└── LICENSE                                       # MIT License
+```
+│                   └── data_extraction_rules.xml
+├── build.gradle.kts                              # Project-level build configuration
+├── settings.gradle.kts                           # Gradle settings with MPAndroidChart repo
+├── gradle.properties                             # Gradle properties
+├── README.md                                     # Comprehensive user documentation
+├── PROJECT_SUMMARY.md                            # This file
+├── CHANGELOG.md                                  # Version history and changes
+└── LICENSE                                       # MIT License
+```
+
 ## Key Features Implemented
 
 ### 1. Bluetooth Low Energy (BLE) Implementation
@@ -75,11 +109,12 @@ kickr_android/
   - Heart Rate Service (0x180D)
   - Fitness Machine Service (0x1826) - for resistance control
 
-### 2. Data Parsing
+### 2. Data Parsing & Calculation
 Implements Bluetooth SIG specifications for:
 - **Power Measurement:** Instantaneous power in watts
 - **Cadence Calculation:** From crank revolution data (RPM)
-- **Speed Calculation:** From wheel revolution data (km/h)
+- **Speed Calculation:** From power using formula: speed (km/h) = (power / 3.6) * 0.3
+- **Distance Tracking:** Cumulative distance from speed integration for all workout types
 - **Heart Rate:** BPM from HR sensor (if available)
 
 ### 3. Real-Time Data Visualization
@@ -96,6 +131,8 @@ Implements Bluetooth SIG specifications for:
 - **Interval Configuration:**
   - Set total workout duration in minutes
   - Add intervals with duration (minutes) and target resistance (%)
+  - Edit existing intervals with validation
+  - Scrollable interval list (200dp height with nested scrolling)
   - Validation ensures intervals sum to total duration
   - Input fields disabled when workout is complete
 - **Workout Execution:**
@@ -104,16 +141,51 @@ Implements Bluetooth SIG specifications for:
   - Real-time display of current interval, elapsed time, target resistance
   - Visual progress indicator on resistance profile chart
   - Stop workout functionality
+  - **Automatic Data Recording:** Records every second during workout:
+    - timestamp, elapsed time, power, speed, cadence, heart rate, resistance, distance
 - **Workout Profile Management:**
   - Save workouts with custom names
   - Load from multiple saved profiles (selection dialog)
   - Delete unwanted profiles (with confirmation)
   - Storage via SharedPreferences + JSON
 
-### 5. Resistance Control
+### 5. Workout History & Analytics
+- **Automatic Workout Saving:** Every workout is automatically saved when stopped
+- **Workout Summary:** Post-workout screen displays:
+  - Duration, distance, average power statistics
+  - Three interactive charts: Power Evolution, Speed Evolution, Resistance Profile
+  - Share functionality to export workout results
+- **Workout History Viewer:**
+  - List view of all completed workouts (sorted by date)
+  - Each entry shows: name, type, date, duration, distance, average power
+  - Tap any workout to view complete details and charts
+- **Historical Data Storage:**
+  - JSON files in app internal storage
+  - File format: `workout_YYYYMMDD_HHMMSS.json`
+  - Contains complete second-by-second data and statistics
+
+### 6. GPX Integration
+- **GPX File Support:** Load GPX tracks from device storage
+- **Interactive Map:** osmdroid-based map viewer showing complete route
+- **Elevation Profile:** Visual display of route elevation
+- **GPX Workouts:** Start workouts from GPX tracks with elevation-based resistance
+
+### 7. Resistance Control
 Multiple protocols for maximum compatibility:
 1. **Wahoo Proprietary Protocol:** Uses custom service UUID with 0x42 command
-### Dependencies
+2. **FTMS Target Power:** Uses Fitness Machine Control Point (opcode 0x05)
+3. **FTMS Resistance Level:** Uses Fitness Machine Control Point (opcode 0x04)
+4. **Cycling Power Control Point:** Alternative power control method
+
+### 8. User Interface & Usability
+- **Material Design 3:** Modern, clean interface with proper theming
+- **Toolbar with Menu:** About dialog showing copyright and app information
+- **Copyright Display:** "Copyright (c) 2026 Amine Othmane" in app footer
+- **Scrollable Interval Lists:** Fixed 200dp height with smooth scrolling
+- **Interactive Charts:** Zoomable, pannable workout data visualization
+- **Permission Handling:** Proper runtime permission flows for Android 12+
+
+## Dependencies
 - AndroidX Core KTX 1.12.0
 - AppCompat 1.6.1
 - Material Design 3 1.11.0
@@ -142,22 +214,33 @@ Standard Bluetooth SIG services:
 - **0x2902:** Client Characteristic Configuration (notifications)
 - **0x2AD9:** Fitness Machine Control Point (resistance control)
 - **a026e005-0a7d-4ab3-97fa-f1500f9feb8b:** Wahoo Trainer Control Point
+### Permissions
 - **Android 12+ (API 31+):** BLUETOOTH_SCAN, BLUETOOTH_CONNECT
 - **Android 10-11 (API 29-30):** ACCESS_FINE_LOCATION
 - **Runtime Permissions:** Proper request flow with user prompts
+
 ## Code Statistics
 
 | Component | Lines of Code | Description |
 |-----------|--------------|-------------|
-| MainActivity.kt | ~642 | Main UI, charts, workout execution |
-| WorkoutSetupActivity.kt | ~340 | Workout configuration & management |
+| MainActivity.kt | ~1198 | Main UI, charts, workout execution & data recording |
+| WorkoutSetupActivity.kt | ~408 | Workout configuration & interval management |
+| WorkoutSummaryActivity.kt | ~188 | Post-workout summary with three charts |
+| WorkoutHistoryActivity.kt | ~82 | Workout history list viewer |
+| WorkoutStorageManager.kt | ~132 | JSON-based workout history storage |
 | KickrBluetoothService.kt | ~426 | BLE functionality with resistance control |
-| activity_main.xml | ~386 | Main screen layout with charts |
-| activity_workout_setup.xml | ~234 | Workout setup UI |
+| GpxMapActivity.kt | ~150 | GPX file viewer with osmdroid map |
+| activity_main.xml | ~467 | Main screen layout with toolbar & charts |
+| activity_workout_setup.xml | ~260 | Workout setup UI with scrollable intervals |
+| activity_workout_summary.xml | ~231 | Summary screen with stats and charts |
+| activity_workout_history.xml | ~63 | History list layout |
+| item_workout_history.xml | ~104 | Workout history card layout |
 | DeviceAdapter.kt | ~50 | Device list adapter |
-| IntervalAdapter.kt | ~45 | Interval list adapter |
+| IntervalAdapter.kt | ~60 | Interval list adapter with edit support |
+| WorkoutHistoryAdapter.kt | ~65 | Workout history list adapter |
 | GattAttributes.kt | ~45 | UUID constants (including FTMS) |
-| Data Models | ~120 | Workout, WorkoutInterval, TrainerData, KickrDevice |
+| Data Models | ~220 | 10 model classes including WorkoutDataPoint & WorkoutHistory |
+| **Total** | **~4400+** | Complete workout tracking & analytics system |
 ## How It Works
 
 ### Basic Training Flow
@@ -205,10 +288,12 @@ Standard Bluetooth SIG services:
    - User can save workout profile with custom name
    - Saved workouts stored as JSON in SharedPreferences
 
-6. **Workout Execution:**
+6. **Workout Execution with Data Recording:**
    - User taps "Start Workout" after configuration
    - Intent passes workout data to MainActivity
    - Workout status card becomes visible (blue background)
+   - **Data recording begins:** Every second the app records:
+     - timestamp, elapsedSeconds, power, speed, cadence, heartRate, resistance, distance
    - Resistance profile chart displays entire workout:
      - X-axis: Time in seconds
      - Y-axis: Resistance % (scaled to 110% of max)
@@ -219,6 +304,7 @@ Standard Bluetooth SIG services:
      - Updates current interval information
      - Sends resistance commands at interval transitions
      - Updates red dashed progress line on chart
+     - **Records data point to workout history**
    - Resistance control:
      - Tries Wahoo proprietary protocol first
      - Falls back to FTMS Target Power
@@ -226,37 +312,67 @@ Standard Bluetooth SIG services:
      - Falls back to Cycling Power Control Point
      - All attempts logged for debugging
 
-7. **Workout Management:**
+7. **Post-Workout Summary:**
+   - When workout stops, data is automatically saved to JSON file
+   - WorkoutSummaryActivity launches with:
+     - Duration, distance, average power statistics
+     - Three interactive charts: Power Evolution, Speed Evolution, Resistance Profile
+     - Share functionality to export results
+   - Workout saved with timestamp filename: `workout_YYYYMMDD_HHMMSS.json`
+
+8. **Workout Management:**
    - **Load:** Opens dialog showing all saved workout names
      - Select workout → shows Load/Delete options
      - Load: Restores workout configuration to UI
      - Delete: Confirmation dialog → removes from storage
    - **Save:** Stores current workout with entered name
+   - **Edit Intervals:** Tap edit button on any interval to modify duration/resistance
+   - **View History:** Tap "View History" to see all completed workouts
    - Multiple workouts can be saved and managed
 
-8. **Disconnect:**
+9. **Workout History Review:**
+   - WorkoutHistoryActivity shows list of all completed workouts
+   - Sorted by date (newest first)
+   - Tap any workout to view complete summary and charts
+   - Historical data never expires (stored locally)
+
+10. **Disconnect:**
    - User taps "Disconnect" or "Stop Workout"
 ## Completed Features
 
-- [x] Real-time data display (power, cadence, speed, HR)
+- [x] Real-time data display (power, cadence, speed, HR, distance)
 - [x] BLE device scanning and connection
 - [x] Charts and graphs for power/speed trends (20-second rolling window)
 - [x] Interval training with programmable resistance
 - [x] Visual workout profile with progress indicator
 - [x] Save/load/delete workout profiles
+- [x] Edit individual workout intervals
+- [x] Scrollable interval list (200dp fixed height)
 - [x] Multiple resistance control protocols
+- [x] Dynamic chart Y-axis scaling
+- [x] Timer-based workout execution
+- [x] **Automatic workout data recording** (every second during workouts)
+- [x] **Distance tracking** for all workout types
+- [x] **Post-workout summary** with three detailed charts
+- [x] **Workout history storage** (JSON files with complete data)
+- [x] **Workout history viewer** (list and detail views)
+- [x] **Speed calculation from power** (no wheel sensor required)
+- [x] GPX file support with interactive map
+- [x] Elevation-based resistance from GPX tracks
+- [x] **Toolbar with menu** and About dialog
+- [x] **Copyright display** in app and source files
+- [x] Custom APK naming (OpenTrainer-2.1.apk)
 - [x] Dynamic chart Y-axis scaling
 - [x] Timer-based workout execution
 - [x] Custom APK naming (OpenTrainer-1.0.apk)
 ## Known Limitations
 
 1. **Single Device Connection:** Can only connect to one trainer at a time
-2. **No Session Persistence:** Workout session data not saved to database
-3. **No Calibration:** No zero offset or spindown calibration support
-4. **Resistance Protocol Uncertainty:** Multiple protocols tried but effectiveness varies by device
-5. **No Historical Data:** Cannot review past workout sessions
-6. **Fixed Chart Window:** Power/speed charts limited to 20-second view
-7. **Manual Interval Entry:** No workout templates or quick presets
+2. **No Calibration:** No zero offset or spindown calibration support
+3. **Resistance Protocol Uncertainty:** Multiple protocols tried but effectiveness varies by device
+4. **Fixed Chart Window:** Power/speed charts limited to 20-second view
+5. **Manual Interval Entry:** No workout templates or quick presets (yet)
+6. **GPX Offline Maps:** Map tiles require internet connection on first view (cached afterwards)
 - [ ] FTP test mode with automated ramp test
 - [ ] Connect to multiple sensors simultaneously (power meter + HR monitor)
 - [ ] ANT+ support for non-BLE devices
@@ -269,49 +385,97 @@ Standard Bluetooth SIG services:
 - [x] Device list populates
 - [x] Workout setup UI functional
 - [x] Interval validation works
+- [x] Interval edit functionality works
+- [x] Scrollable interval list works
 - [x] Workout profile save/load/delete
 - [x] Charts display correctly
 - [x] Timer updates every second
 - [x] Resistance profile chart shows complete workout
 - [x] Progress indicator updates during workout
 - [x] Dynamic Y-axis scaling works
+- [x] Workout data recording every second
+- [x] Distance calculation and tracking
+- [x] Post-workout summary displays
+- [x] Workout history saves automatically
+- [x] Workout history viewer works
+- [x] GPX file loading and map display
+- [x] Toolbar and menu display correctly
+- [x] Copyright displayed in app
+
 ## Deployment Ready
 
 The app is ready to:
-- ✅ Build debug APK (OpenTrainer-1.0.apk)
+- ✅ Build debug APK (OpenTrainer-2.1.apk)
 - ✅ Build release APK
 - ✅ Install on physical devices
 - ✅ Run in Android Studio
 - ✅ Scan for BLE devices
-- ✅ Display UI with charts
+- ✅ Display UI with toolbar and charts
 - ✅ Create and save workout profiles
+- ✅ Edit workout intervals
 - ✅ Execute timed workouts with resistance control
+- ✅ Record complete workout data
+- ✅ Display post-workout analytics
+- ✅ View workout history
+- ✅ Load and display GPX tracks
 - ⚠️  Requires real Kickr Core for resistance control testing
 
-## Next Steps
+## Next Steps for Future Development
 
-1. **Test with actual Kickr Core trainer**
-   - Verify resistance commands work correctly
+1. **Hardware Testing:**
+   - Verify resistance commands work correctly with real Kickr Core
    - Test all four resistance protocols
    - Validate data accuracy against known values
-2. **Hardware Validation:**
    - Confirm ERG mode engagement
    - Test interval transitions
    - Verify resistance percentage accuracy
-3. **Extended Testing:**
-   - Test workout profile persistence across app restarts
-   - Test with multiple saved workouts (10+ profiles)
+
+2. **Extended Testing:**
+   - Test workout history with 50+ saved workouts
    - Test edge cases (0% resistance, 100% resistance)
-   - Test long workouts (60+ minutes)
-4. **Code Quality:**
+   - Test long workouts (2+ hours)
+   - Test GPX files with complex elevation profiles
+   - Test with multiple Android devices and OS versions
+
+3. **Code Quality:**
    - Add unit tests for data parsing logic
-   - Add unit tests for workout validation
+   - Add unit tests for workout validation and statistics
+   - Add unit tests for WorkoutStorageManager
    - Improve error handling for BLE failures
-5. **Performance:**
-   - Monitor chart performance with long sessions
-   - Optimize SharedPreferences JSON parsing
-6. **UX Improvements:**
-   - Create proper launcher icons
+   - Add integration tests for workout execution
+
+4. **Performance Optimization:**
+   - Monitor chart performance with long sessions (data point optimization)
+   - Optimize JSON parsing for large workout history files
+   - Profile memory usage during extended workouts
+   - Test workout history list with 100+ entries
+
+5. **UX Improvements:**
+   - Add workout templates (FTP test, endurance, intervals, etc.)
+   - Add workout search/filter in history
+   - Add workout comparison feature
+   - Add progress trends over time
+   - Add export to GPX/TCX/FIT formats
+   - Improve launcher icons with professional design
+
+6. **Feature Enhancements:**
+   - Multi-sensor support (connect HR strap + power meter simultaneously)
+   - ANT+ support for non-BLE devices
+   - Structured workout library (TrainerRoad-style)
+   - Virtual power estimation for non-power trainers
+   - Integration with Strava/TrainingPeaks (optional)
+   - Workout sharing between devices
+
+---
+
+**Created:** January 4, 2026  
+**Last Updated:** January 6, 2026  
+**Current Version:** 2.1  
+**Status:** Feature-complete workout tracking & analytics system  
+**Total Development Time:** Extended development sessions  
+**Files Created:** 40+ files  
+**APK Output:** OpenTrainer-2.1.apk  
+**Copyright:** © 2026 Amine Othmane
    - Add workout templates
    - Add help/tutorial screen
 7. **Multi-Device Testing:**

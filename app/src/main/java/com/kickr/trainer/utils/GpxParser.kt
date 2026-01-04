@@ -1,5 +1,11 @@
+/*
+ * Copyright (c) 2026 Amine Othmane
+ * All rights reserved.
+ */
+
 package com.kickr.trainer.utils
 
+import android.util.Log
 import android.util.Xml
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.GpxTrackPoint
