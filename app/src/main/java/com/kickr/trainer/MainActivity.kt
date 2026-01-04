@@ -29,6 +29,9 @@ import com.kickr.trainer.bluetooth.KickrBluetoothService
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.GpxTrack
+import com.kickr.trainer.model.WorkoutDataPoint
+import com.kickr.trainer.model.WorkoutHistory
+import com.kickr.trainer.utils.WorkoutStorageManager
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -53,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setupWorkoutButton: Button
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
+    private lateinit var viewHistoryButton: Button
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
     private lateinit var dataScrollView: NestedScrollView
@@ -83,6 +87,11 @@ class MainActivity : AppCompatActivity() {
     private var workoutTimer: CountDownTimer? = null
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
+    
+    // Workout tracking
+    private var workoutStartTime: Long = 0
+    private val workoutDataPoints = mutableListOf<WorkoutDataPoint>()
+    private lateinit var workoutStorageManager: WorkoutStorageManager
 
     private val requestBluetoothPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -163,6 +172,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         bluetoothService = KickrBluetoothService(this)
+        workoutStorageManager = WorkoutStorageManager(this)
         
         initViews()
         setupRecyclerView()
@@ -176,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
         viewGpxButton = findViewById(R.id.viewGpxButton)
         stopWorkoutButton = findViewById(R.id.stopWorkoutButton)
+        viewHistoryButton = findViewById(R.id.viewHistoryButton)
         connectionStatusTextView = findViewById(R.id.connectionStatusTextView)
         devicesRecyclerView = findViewById(R.id.devicesRecyclerView)
         dataScrollView = findViewById(R.id.dataScrollView)
@@ -536,6 +547,7 @@ class MainActivity : AppCompatActivity() {
                         disconnectButton.visibility = View.VISIBLE
                         setupWorkoutButton.visibility = View.VISIBLE
                         viewGpxButton.visibility = View.VISIBLE
+                        viewHistoryButton.visibility = View.VISIBLE
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.VISIBLE
                         
@@ -566,6 +578,11 @@ class MainActivity : AppCompatActivity() {
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
+                
+                // Track workout data if a workout is active
+                if (activeWorkout != null && workoutStartTime > 0) {
+                    recordWorkoutData(data)
+                }
             }
         }
     }
@@ -611,6 +628,29 @@ class MainActivity : AppCompatActivity() {
         speedChart.notifyDataSetChanged()
         speedChart.invalidate()
     }
+    
+    private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData) {
+        val currentResistance = activeWorkout?.let { workout ->
+            if (workout.gpxTrack != null) {
+                workout.getResistanceAtDistance(cumulativeDistance)
+            } else {
+                workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
+            }
+        } ?: 0
+        
+        val dataPoint = WorkoutDataPoint(
+            timestamp = System.currentTimeMillis(),
+            elapsedSeconds = workoutElapsedSeconds,
+            power = data.power,
+            speed = data.speed,
+            cadence = data.cadence,
+            heartRate = data.heartRate,
+            resistance = currentResistance,
+            distance = cumulativeDistance
+        )
+        
+        workoutDataPoints.add(dataPoint)
+    }
 
     private fun setupClickListeners() {
         scanButton.setOnClickListener {
@@ -636,6 +676,11 @@ class MainActivity : AppCompatActivity() {
             gpxMapLauncher.launch(intent)
         }
         
+        viewHistoryButton.setOnClickListener {
+            val intent = Intent(this, WorkoutHistoryActivity::class.java)
+            startActivity(intent)
+        }
+        
         viewMapButton.setOnClickListener {
             // Open map with current position during GPX workout
             val intent = Intent(this, GpxMapActivity::class.java)
@@ -655,12 +700,15 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Workout Started! Scroll to see resistance chart.", Toast.LENGTH_LONG).show()
         
         workoutElapsedSeconds = 0
+        workoutStartTime = System.currentTimeMillis()
+        workoutDataPoints.clear()
         
         // Make cards visible
         Log.d(TAG, "Making workout cards visible")
         workoutStatusCard.visibility = View.VISIBLE
         workoutChartCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
+        viewHistoryButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
         
         Log.d(TAG, "Workout status card visible: ${workoutStatusCard.visibility == View.VISIBLE}")
@@ -695,6 +743,14 @@ class MainActivity : AppCompatActivity() {
             override fun onTick(millisUntilFinished: Long) {
                 workoutElapsedSeconds++
                 Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed, remaining: ${workout.getRemainingTime(workoutElapsedSeconds)}s")
+                
+                // Calculate distance for resistance workouts (not GPX)
+                if (workout.gpxTrack == null) {
+                    val currentSpeed = bluetoothService.trainerData.value.speed
+                    val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
+                    val distanceThisSecond = validSpeed / 3.6 // convert km/h to m/s
+                    cumulativeDistance += distanceThisSecond
+                }
                 
                 val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
                 if (currentInterval != null) {
@@ -822,22 +878,97 @@ class MainActivity : AppCompatActivity() {
     
     private fun stopWorkout() {
         Log.d(TAG, "Stopping workout")
+        
+        // Save workout data if we have data points
+        if (workoutDataPoints.isNotEmpty() && workoutStartTime > 0) {
+            saveWorkoutHistory()
+        }
+        
         workoutTimer?.cancel()
         workoutTimer = null
+        val wasActive = activeWorkout != null
         activeWorkout = null
         workoutElapsedSeconds = 0
         cumulativeDistance = 0.0
+        workoutStartTime = 0
         
         workoutStatusCard.visibility = View.GONE
         workoutChartCard.visibility = View.GONE
         mapCard.visibility = View.GONE
         setupWorkoutButton.visibility = View.VISIBLE
         viewGpxButton.visibility = View.VISIBLE
+        viewHistoryButton.visibility = View.VISIBLE
         stopWorkoutButton.visibility = View.GONE
         
         // Reset resistance to 0
         bluetoothService.setResistance(0)
         Log.d(TAG, "Resistance reset to 0%")
+    }
+    
+    private fun saveWorkoutHistory() {
+        try {
+            val endTime = System.currentTimeMillis()
+            
+            // Calculate statistics
+            val totalDistance = workoutDataPoints.lastOrNull()?.distance ?: 0.0
+            val avgPower = if (workoutDataPoints.isNotEmpty()) {
+                workoutDataPoints.map { it.power }.average()
+            } else 0.0
+            val maxPower = workoutDataPoints.maxOfOrNull { it.power } ?: 0
+            val avgSpeed = if (workoutDataPoints.isNotEmpty()) {
+                workoutDataPoints.map { it.speed.toDouble() }.average()
+            } else 0.0
+            val maxSpeed = workoutDataPoints.maxOfOrNull { it.speed } ?: 0f
+            val avgCadence = if (workoutDataPoints.isNotEmpty()) {
+                workoutDataPoints.map { it.cadence }.average()
+            } else 0.0
+            val avgHeartRate = if (workoutDataPoints.isNotEmpty()) {
+                val hrValues = workoutDataPoints.filter { it.heartRate > 0 }.map { it.heartRate }
+                if (hrValues.isNotEmpty()) hrValues.average() else 0.0
+            } else 0.0
+            
+            // Determine workout type and name
+            val workout = activeWorkout
+            val workoutType = if (workout?.gpxTrack != null) "GPX" else "RESISTANCE"
+            val workoutName = if (workout?.gpxTrack != null) {
+                workout.gpxTrack!!.name
+            } else {
+                "Custom Workout"
+            }
+            
+            val history = WorkoutHistory(
+                startTime = workoutStartTime,
+                endTime = endTime,
+                workoutType = workoutType,
+                workoutName = workoutName,
+                dataPoints = workoutDataPoints.toList(),
+                totalDistance = totalDistance,
+                averagePower = avgPower,
+                maxPower = maxPower,
+                averageSpeed = avgSpeed,
+                maxSpeed = maxSpeed,
+                averageCadence = avgCadence,
+                averageHeartRate = avgHeartRate
+            )
+            
+            val savedFile = workoutStorageManager.saveWorkoutHistory(history)
+            if (savedFile != null) {
+                Log.d(TAG, "Workout history saved: ${savedFile.absolutePath}")
+                
+                // Show workout summary
+                val intent = Intent(this, WorkoutSummaryActivity::class.java)
+                intent.putExtra(WorkoutSummaryActivity.EXTRA_WORKOUT_FILE, savedFile.absolutePath)
+                startActivity(intent)
+            } else {
+                Log.e(TAG, "Failed to save workout history")
+                Toast.makeText(this, "Failed to save workout data", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving workout history", e)
+            Toast.makeText(this, "Error saving workout: ${e.message}", Toast.LENGTH_SHORT).show()
+        } finally {
+            workoutDataPoints.clear()
+        }
     }
     
     private fun startGpxWorkout(gpxTrack: GpxTrack) {
@@ -858,11 +989,14 @@ class MainActivity : AppCompatActivity() {
         
         cumulativeDistance = 0.0
         workoutElapsedSeconds = 0
+        workoutStartTime = System.currentTimeMillis()
+        workoutDataPoints.clear()
         
         // Show workout UI
         workoutStatusCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
         viewGpxButton.visibility = View.GONE
+        viewHistoryButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
         viewMapButton.visibility = View.GONE // Hide the external map button
         

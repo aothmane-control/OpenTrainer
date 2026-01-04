@@ -58,6 +58,16 @@
             android:name=".GpxMapActivity"
             android:exported="false"
             android:label="GPX Track Viewer" />
+        
+        <activity
+            android:name=".WorkoutSummaryActivity"
+            android:exported="false"
+            android:label="Workout Summary" />
+        
+        <activity
+            android:name=".WorkoutHistoryActivity"
+            android:exported="false"
+            android:label="Workout History" />
     </application>
 
 </manifest>

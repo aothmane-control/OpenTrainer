@@ -393,7 +393,7 @@
         app:layout_constraintEnd_toStartOf="@id/viewGpxButton"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/dataScrollView"
-        app:layout_constraintBottom_toTopOf="@id/disconnectButton"
+        app:layout_constraintBottom_toTopOf="@id/viewHistoryButton"
         tools:visibility="visible" />
     
     <Button
@@ -408,7 +408,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/setupWorkoutButton"
         app:layout_constraintTop_toBottomOf="@id/dataScrollView"
-        app:layout_constraintBottom_toTopOf="@id/disconnectButton"
+        app:layout_constraintBottom_toTopOf="@id/viewHistoryButton"
         tools:visibility="visible" />
     
     <Button
@@ -421,6 +421,20 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/dataScrollView"
+        app:layout_constraintBottom_toTopOf="@id/viewHistoryButton"
+        tools:visibility="visible" />
+    
+    <Button
+        android:id="@+id/viewHistoryButton"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="View History"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/setupWorkoutButton"
         app:layout_constraintBottom_toTopOf="@id/disconnectButton"
         tools:visibility="visible" />
 
