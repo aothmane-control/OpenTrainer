@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var powerChart: LineChart
     private lateinit var speedChart: LineChart
     private lateinit var workoutStatusCard: MaterialCardView
+    private lateinit var workoutChartCard: MaterialCardView
     private lateinit var workoutIntervalTextView: TextView
     private lateinit var workoutResistanceTextView: TextView
     private lateinit var workoutTimeTextView: TextView
@@ -139,6 +140,7 @@ class MainActivity : AppCompatActivity() {
         powerChart = findViewById(R.id.powerChart)
         speedChart = findViewById(R.id.speedChart)
         workoutStatusCard = findViewById(R.id.workoutStatusCard)
+        workoutChartCard = findViewById(R.id.workoutChartCard)
         workoutIntervalTextView = findViewById(R.id.workoutIntervalTextView)
         workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
@@ -201,22 +203,30 @@ class MainActivity : AppCompatActivity() {
             isDragEnabled = false
             setScaleEnabled(false)
             setPinchZoom(false)
-            legend.isEnabled = false
+            legend.isEnabled = true
+            legend.textColor = Color.DKGRAY
             axisRight.isEnabled = false
             axisLeft.apply {
-                textColor = Color.WHITE
+                textColor = Color.DKGRAY
                 setDrawGridLines(true)
-                gridColor = Color.WHITE
+                gridColor = Color.LTGRAY
                 axisMinimum = 0f
                 axisMaximum = 100f
-                granularity = 20f
+                granularity = 10f
             }
             xAxis.apply {
-                textColor = Color.WHITE
+                textColor = Color.DKGRAY
                 setDrawGridLines(true)
-                gridColor = Color.WHITE
+                gridColor = Color.LTGRAY
                 position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
-                granularity = 1f
+                granularity = 30f
+                valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val mins = (value / 60).toInt()
+                        val secs = (value % 60).toInt()
+                        return "%d:%02d".format(mins, secs)
+                    }
+                }
             }
         }
     }
@@ -389,6 +399,7 @@ class MainActivity : AppCompatActivity() {
         
         workoutElapsedSeconds = 0
         workoutStatusCard.visibility = View.VISIBLE
+        workoutChartCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
         
@@ -463,20 +474,22 @@ class MainActivity : AppCompatActivity() {
         val entries = mutableListOf<Entry>()
         var accumulatedTime = 0f
         
-        // Create the resistance profile
+        // Create the resistance profile with step function
         for (interval in workout.intervals) {
             entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
             accumulatedTime += interval.duration
             entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
         }
         
-        val dataSet = LineDataSet(entries, "Resistance").apply {
-            color = Color.WHITE
+        val dataSet = LineDataSet(entries, "Target Resistance (%)").apply {
+            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
             lineWidth = 3f
             setDrawCircles(false)
             setDrawValues(false)
             mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(false)
+            setDrawFilled(true)
+            fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
+            fillAlpha = 50
         }
         
         workoutProfileChart.data = LineData(dataSet)
@@ -496,13 +509,15 @@ class MainActivity : AppCompatActivity() {
             entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
         }
         
-        val profileDataSet = LineDataSet(entries, "Resistance").apply {
-            color = Color.WHITE
+        val profileDataSet = LineDataSet(entries, "Target Resistance (%)").apply {
+            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
             lineWidth = 3f
             setDrawCircles(false)
             setDrawValues(false)
             mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(false)
+            setDrawFilled(true)
+            fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
+            fillAlpha = 50
         }
         
         // Add progress indicator line
@@ -511,9 +526,9 @@ class MainActivity : AppCompatActivity() {
             Entry(elapsedSeconds.toFloat(), 100f)
         )
         
-        val progressDataSet = LineDataSet(progressEntries, "Progress").apply {
-            color = Color.RED
-            lineWidth = 2f
+        val progressDataSet = LineDataSet(progressEntries, "Current Position").apply {
+            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
+            lineWidth = 3f
             setDrawCircles(false)
             setDrawValues(false)
             mode = LineDataSet.Mode.LINEAR
@@ -533,6 +548,7 @@ class MainActivity : AppCompatActivity() {
         workoutElapsedSeconds = 0
         
         workoutStatusCard.visibility = View.GONE
+        workoutChartCard.visibility = View.GONE
         setupWorkoutButton.visibility = View.VISIBLE
         stopWorkoutButton.visibility = View.GONE
         

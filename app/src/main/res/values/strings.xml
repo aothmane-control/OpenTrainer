@@ -49,6 +49,7 @@
     <string name="workout_resistance_format">Target: %1$d%%</string>
     <string name="workout_complete">Workout Complete!</string>
     <string name="workout_profile">Workout Profile</string>
+    <string name="resistance_profile">Resistance Profile</string>
     <string name="total_duration">Total Duration (minutes)</string>
     <string name="duration_minutes">Duration (min)</string>
     <string name="workout_must_have_intervals">Please add at least one interval</string>
