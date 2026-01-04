@@ -113,7 +113,23 @@ class KickrBluetoothService(private val context: Context) {
         
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Services discovered")
+                Log.d(TAG, "Services discovered successfully")
+                
+                // Log all available services
+                gatt.services.forEach { service ->
+                    Log.d(TAG, "Service: ${service.uuid}")
+                    service.characteristics.forEach { char ->
+                        Log.d(TAG, "  Characteristic: ${char.uuid}")
+                    }
+                }
+                
+                // Check for Fitness Machine Service
+                if (gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE) != null) {
+                    Log.d(TAG, "Fitness Machine Service is available")
+                } else {
+                    Log.w(TAG, "Fitness Machine Service NOT found - resistance control may not work")
+                }
+                
                 enableNotifications(gatt)
             } else {
                 Log.e(TAG, "Service discovery failed with status: $status")
@@ -178,27 +194,46 @@ class KickrBluetoothService(private val context: Context) {
     }
     
     fun setResistance(resistancePercent: Int) {
-        val gatt = bluetoothGatt ?: return
-        
-        // Try Fitness Machine Service first (more common for resistance control)
-        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
-            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
-                // Set Target Resistance Level command (opcode 0x04)
-                // Resistance level is in 0.1 percent increments
-                val resistanceValue = (resistancePercent * 10).toShort()
-                val command = byteArrayOf(
-                    0x04.toByte(), // Opcode: Set Target Resistance Level
-                    (resistanceValue.toInt() and 0xFF).toByte(),
-                    ((resistanceValue.toInt() shr 8) and 0xFF).toByte()
-                )
-                characteristic.value = command
-                gatt.writeCharacteristic(characteristic)
-                Log.d(TAG, "Set resistance to $resistancePercent%")
-                return
-            }
+        val gatt = bluetoothGatt
+        if (gatt == null) {
+            Log.w(TAG, "Cannot set resistance: GATT not connected")
+            return
         }
         
-        Log.w(TAG, "Resistance control not available on this device")
+        Log.d(TAG, "Attempting to set resistance to $resistancePercent%")
+        
+        // Try Fitness Machine Service first (more common for resistance control)
+        val service = gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)
+        if (service == null) {
+            Log.w(TAG, "Fitness Machine Service not found")
+            return
+        }
+        
+        val characteristic = service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)
+        if (characteristic == null) {
+            Log.w(TAG, "Fitness Machine Control Point characteristic not found")
+            return
+        }
+        
+        // Set Target Resistance Level command (opcode 0x04)
+        // Resistance level is in 0.1 percent increments
+        val resistanceValue = (resistancePercent * 10).toShort()
+        val command = byteArrayOf(
+            0x04.toByte(), // Opcode: Set Target Resistance Level
+            (resistanceValue.toInt() and 0xFF).toByte(),
+            ((resistanceValue.toInt() shr 8) and 0xFF).toByte()
+        )
+        
+        Log.d(TAG, "Writing resistance command: ${command.joinToString { "0x%02X".format(it) }}")
+        
+        characteristic.value = command
+        val success = gatt.writeCharacteristic(characteristic)
+        
+        if (success) {
+            Log.d(TAG, "Successfully queued resistance command to $resistancePercent%")
+        } else {
+            Log.e(TAG, "Failed to queue resistance command")
+        }
     }
     
     private fun enableNotifications(gatt: BluetoothGatt) {

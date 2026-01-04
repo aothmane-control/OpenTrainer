@@ -28,8 +28,13 @@ import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
 import com.kickr.trainer.model.Workout
 import kotlinx.coroutines.launch
+import android.util.Log
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
     private lateinit var bluetoothService: KickrBluetoothService
     private lateinit var deviceAdapter: DeviceAdapter
@@ -51,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workoutIntervalTextView: TextView
     private lateinit var workoutResistanceTextView: TextView
     private lateinit var workoutTimeTextView: TextView
+    private lateinit var workoutProfileChart: LineChart
     
     private val powerDataPoints = mutableListOf<Entry>()
     private val speedDataPoints = mutableListOf<Entry>()
@@ -136,8 +142,10 @@ class MainActivity : AppCompatActivity() {
         workoutIntervalTextView = findViewById(R.id.workoutIntervalTextView)
         workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
+        workoutProfileChart = findViewById(R.id.workoutProfileChart)
         
         setupCharts()
+        setupWorkoutProfileChart()
     }
     
     private fun setupCharts() {
@@ -181,6 +189,33 @@ class MainActivity : AppCompatActivity() {
                 textColor = Color.DKGRAY
                 setDrawGridLines(true)
                 gridColor = Color.LTGRAY
+                granularity = 1f
+            }
+        }
+    }
+    
+    private fun setupWorkoutProfileChart() {
+        workoutProfileChart.apply {
+            description.isEnabled = false
+            setTouchEnabled(false)
+            isDragEnabled = false
+            setScaleEnabled(false)
+            setPinchZoom(false)
+            legend.isEnabled = false
+            axisRight.isEnabled = false
+            axisLeft.apply {
+                textColor = Color.WHITE
+                setDrawGridLines(true)
+                gridColor = Color.WHITE
+                axisMinimum = 0f
+                axisMaximum = 100f
+                granularity = 20f
+            }
+            xAxis.apply {
+                textColor = Color.WHITE
+                setDrawGridLines(true)
+                gridColor = Color.WHITE
+                position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 granularity = 1f
             }
         }
@@ -250,6 +285,7 @@ class MainActivity : AppCompatActivity() {
                         )
                         scanButton.visibility = View.GONE
                         disconnectButton.visibility = View.VISIBLE
+                        setupWorkoutButton.visibility = View.VISIBLE
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.VISIBLE
                         startTime = System.currentTimeMillis()
@@ -349,15 +385,37 @@ class MainActivity : AppCompatActivity() {
     private fun startWorkout() {
         val workout = activeWorkout ?: return
         
+        Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
+        
         workoutElapsedSeconds = 0
         workoutStatusCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
         
+        // Build workout profile chart
+        buildWorkoutProfileChart(workout)
+        
+        // Initialize UI with first interval
+        val firstInterval = workout.intervals.firstOrNull()
+        if (firstInterval != null) {
+            workoutIntervalTextView.text = getString(R.string.workout_interval_format, 1, workout.intervals.size)
+            workoutResistanceTextView.text = getString(R.string.workout_resistance_format, firstInterval.resistance)
+            val mins = workout.totalDuration / 60
+            val secs = workout.totalDuration % 60
+            workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
+            
+            // Set initial resistance
+            bluetoothService.setResistance(firstInterval.resistance)
+            Log.d(TAG, "Set initial resistance: ${firstInterval.resistance}%")
+        }
+        
         // Start timer that ticks every second
         workoutTimer = object : CountDownTimer(workout.totalDuration * 1000L, 1000) {
+            private var lastResistance = -1
+            
             override fun onTick(millisUntilFinished: Long) {
                 workoutElapsedSeconds++
+                Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed")
                 
                 val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
                 if (currentInterval != null) {
@@ -379,19 +437,96 @@ class MainActivity : AppCompatActivity() {
                     val secs = remaining % 60
                     workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
                     
-                    // Send resistance command to trainer
-                    bluetoothService.setResistance(currentInterval.resistance)
+                    // Update workout profile chart with progress line
+                    updateWorkoutProfileProgress(workout, workoutElapsedSeconds)
+                    
+                    // Send resistance command when interval changes
+                    if (currentInterval.resistance != lastResistance) {
+                        bluetoothService.setResistance(currentInterval.resistance)
+                        lastResistance = currentInterval.resistance
+                        Log.d(TAG, "Resistance changed to: ${currentInterval.resistance}% at ${workoutElapsedSeconds}s")
+                    }
                 }
             }
             
             override fun onFinish() {
+                Log.d(TAG, "Workout finished")
                 Toast.makeText(this@MainActivity, R.string.workout_complete, Toast.LENGTH_SHORT).show()
                 stopWorkout()
             }
         }.start()
+        
+        Log.d(TAG, "Workout timer started")
+    }
+    
+    private fun buildWorkoutProfileChart(workout: Workout) {
+        val entries = mutableListOf<Entry>()
+        var accumulatedTime = 0f
+        
+        // Create the resistance profile
+        for (interval in workout.intervals) {
+            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+            accumulatedTime += interval.duration
+            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+        }
+        
+        val dataSet = LineDataSet(entries, "Resistance").apply {
+            color = Color.WHITE
+            lineWidth = 3f
+            setDrawCircles(false)
+            setDrawValues(false)
+            mode = LineDataSet.Mode.LINEAR
+            setDrawFilled(false)
+        }
+        
+        workoutProfileChart.data = LineData(dataSet)
+        workoutProfileChart.xAxis.axisMaximum = workout.totalDuration.toFloat()
+        workoutProfileChart.notifyDataSetChanged()
+        workoutProfileChart.invalidate()
+    }
+    
+    private fun updateWorkoutProfileProgress(workout: Workout, elapsedSeconds: Int) {
+        val entries = mutableListOf<Entry>()
+        var accumulatedTime = 0f
+        
+        // Rebuild the resistance profile
+        for (interval in workout.intervals) {
+            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+            accumulatedTime += interval.duration
+            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+        }
+        
+        val profileDataSet = LineDataSet(entries, "Resistance").apply {
+            color = Color.WHITE
+            lineWidth = 3f
+            setDrawCircles(false)
+            setDrawValues(false)
+            mode = LineDataSet.Mode.LINEAR
+            setDrawFilled(false)
+        }
+        
+        // Add progress indicator line
+        val progressEntries = listOf(
+            Entry(elapsedSeconds.toFloat(), 0f),
+            Entry(elapsedSeconds.toFloat(), 100f)
+        )
+        
+        val progressDataSet = LineDataSet(progressEntries, "Progress").apply {
+            color = Color.RED
+            lineWidth = 2f
+            setDrawCircles(false)
+            setDrawValues(false)
+            mode = LineDataSet.Mode.LINEAR
+            enableDashedLine(10f, 5f, 0f)
+        }
+        
+        workoutProfileChart.data = LineData(profileDataSet, progressDataSet)
+        workoutProfileChart.notifyDataSetChanged()
+        workoutProfileChart.invalidate()
     }
     
     private fun stopWorkout() {
+        Log.d(TAG, "Stopping workout")
         workoutTimer?.cancel()
         workoutTimer = null
         activeWorkout = null
@@ -403,6 +538,7 @@ class MainActivity : AppCompatActivity() {
         
         // Reset resistance to 0
         bluetoothService.setResistance(0)
+        Log.d(TAG, "Resistance reset to 0%")
     }
 
     private fun checkPermissionsAndScan() {
