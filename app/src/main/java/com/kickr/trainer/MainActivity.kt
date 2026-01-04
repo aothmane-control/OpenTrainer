@@ -98,18 +98,25 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             result.data?.let { data ->
-                val durationMinutes = data.getIntExtra("durationMinutes", 0)
-                val durations = data.getIntArrayExtra("durations") ?: IntArray(0)
-                val resistances = data.getIntArrayExtra("resistances") ?: IntArray(0)
+                val durationSeconds = data.getIntExtra("workout_duration", 0)
+                val durations = data.getIntArrayExtra("workout_interval_durations") ?: IntArray(0)
+                val resistances = data.getIntArrayExtra("workout_interval_resistances") ?: IntArray(0)
+                
+                Log.d(TAG, "Received workout: duration=${durationSeconds}s, intervals=${durations.size}")
                 
                 if (durations.isNotEmpty() && resistances.isNotEmpty()) {
                     val intervals = durations.zip(resistances).map { (duration, resistance) ->
                         com.kickr.trainer.model.WorkoutInterval(duration, resistance)
                     }
-                    activeWorkout = Workout(durationMinutes * 60, intervals)
+                    activeWorkout = Workout(durationSeconds, intervals)
                     startWorkout()
+                } else {
+                    Log.e(TAG, "No intervals received!")
+                    Toast.makeText(this@MainActivity, "Failed to create workout", Toast.LENGTH_SHORT).show()
                 }
             }
+        } else {
+            Log.d(TAG, "Workout setup cancelled")
         }
     }
 
@@ -145,6 +152,12 @@ class MainActivity : AppCompatActivity() {
         workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
         workoutProfileChart = findViewById(R.id.workoutProfileChart)
+        
+        if (workoutStatusCard == null || workoutChartCard == null) {
+            Log.e(TAG, "ERROR: Workout cards not found in layout!")
+        } else {
+            Log.d(TAG, "Workout views initialized successfully")
+        }
         
         setupCharts()
         setupWorkoutProfileChart()
@@ -298,6 +311,9 @@ class MainActivity : AppCompatActivity() {
                         setupWorkoutButton.visibility = View.VISIBLE
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.VISIBLE
+                        
+                        Log.d(TAG, "Connected - Setup Workout button visible: ${setupWorkoutButton.visibility == View.VISIBLE}")
+                        
                         startTime = System.currentTimeMillis()
                         powerDataPoints.clear()
                         speedDataPoints.clear()
@@ -383,6 +399,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         setupWorkoutButton.setOnClickListener {
+            Log.d(TAG, "Setup Workout button clicked")
             val intent = Intent(this, WorkoutSetupActivity::class.java)
             workoutSetupLauncher.launch(intent)
         }
@@ -396,12 +413,24 @@ class MainActivity : AppCompatActivity() {
         val workout = activeWorkout ?: return
         
         Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
+        Toast.makeText(this, "Workout Started! Scroll to see resistance chart.", Toast.LENGTH_LONG).show()
         
         workoutElapsedSeconds = 0
+        
+        // Make cards visible
+        Log.d(TAG, "Making workout cards visible")
         workoutStatusCard.visibility = View.VISIBLE
         workoutChartCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
+        
+        Log.d(TAG, "Workout status card visible: ${workoutStatusCard.visibility == View.VISIBLE}")
+        Log.d(TAG, "Workout chart card visible: ${workoutChartCard.visibility == View.VISIBLE}")
+        
+        // Scroll to top to show workout cards
+        dataScrollView.post {
+            dataScrollView.smoothScrollTo(0, 0)
+        }
         
         // Build workout profile chart
         buildWorkoutProfileChart(workout)
@@ -421,12 +450,12 @@ class MainActivity : AppCompatActivity() {
         }
         
         // Start timer that ticks every second
-        workoutTimer = object : CountDownTimer(workout.totalDuration * 1000L, 1000) {
+        workoutTimer = object : CountDownTimer((workout.totalDuration + 1) * 1000L, 1000) {
             private var lastResistance = -1
             
             override fun onTick(millisUntilFinished: Long) {
                 workoutElapsedSeconds++
-                Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed")
+                Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed, remaining: ${workout.getRemainingTime(workoutElapsedSeconds)}s")
                 
                 val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
                 if (currentInterval != null) {

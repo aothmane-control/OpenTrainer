@@ -59,7 +59,7 @@
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
         android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/disconnectButton"
+        app:layout_constraintBottom_toTopOf="@id/setupWorkoutButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/scanButton"
@@ -78,8 +78,7 @@
                 android:visibility="gone"
                 app:cardBackgroundColor="@color/md_theme_light_primaryContainer"
                 app:cardCornerRadius="8dp"
-                app:cardElevation="4dp"
-                tools:visibility="visible">
+                app:cardElevation="4dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -131,8 +130,7 @@
                 android:layout_marginBottom="16dp"
                 android:visibility="gone"
                 app:cardCornerRadius="8dp"
-                app:cardElevation="4dp"
-                tools:visibility="visible">
+                app:cardElevation="4dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -349,10 +347,12 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="@string/setup_workout"
+        android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/dataScrollView"
-        app:layout_constraintBottom_toTopOf="@id/disconnectButton" />
+        app:layout_constraintBottom_toTopOf="@id/disconnectButton"
+        tools:visibility="visible" />
     
     <Button
         android:id="@+id/stopWorkoutButton"
