@@ -1,6 +1,20 @@
 # OpenTrainer Android App
 
-An Android application that connects to a Wahoo Kickr Core trainer via Bluetooth Low Energy (BLE) and displays real-time training data with customizable workout resistance profiles.
+**🔓 Open Source | 🔒 Privacy First | 📶 Works Offline**
+
+An Android application that connects to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy (BLE) to display real-time training data with customizable workout resistance profiles and GPX-based elevation workouts.
+
+## 📥 Installation
+
+Download the latest APK from the [Releases](https://github.com/aothmane-control/OpenTrainer/releases) page.
+
+## ✨ Why OpenTrainer?
+
+- **🌟 Completely Open Source** - All code is available under MIT License
+- **🔐 Your Data Stays Private** - No user accounts, no profiles, no cloud services
+- **📶 Works Offline** - No internet connection required for training (map tiles only needed when viewing maps)
+- **🚫 Zero Tracking** - No analytics, no telemetry, no data collection
+- **🆓 Always Free** - No subscriptions, no premium features, no ads
 
 ## Features
 
@@ -43,7 +57,9 @@ An Android application that connects to a Wahoo Kickr Core trainer via Bluetooth
 
 - Android device with Bluetooth LE support
 - Android 8.0 (API 26) or higher
-- Wahoo Kickr Core trainer or compatible device
+- Wahoo Kickr Core trainer or compatible smart trainer
+- **Internet connection only needed for map tile downloads** (optional, only when using map view)
+- All training data stays on your device - no cloud sync, no external servers
 
 ## Bluetooth Services Supported
 
@@ -79,6 +95,10 @@ The app requires the following permissions:
 - `ACCESS_FINE_LOCATION` - Required for BLE scanning on Android 10-11
 - `BLUETOOTH` - Legacy Bluetooth permission (Android 11 and below)
 - `BLUETOOTH_ADMIN` - Legacy Bluetooth admin permission (Android 11 and below)
+- `INTERNET` - Only used for downloading map tiles when viewing GPX routes on the map (optional feature)
+- `ACCESS_NETWORK_STATE` - To check network availability for map tiles
+
+**Privacy Note:** All permissions are used solely for local device functionality. No data is transmitted to external servers except for map tiles from OpenStreetMap (only when explicitly viewing maps).
 
 ## Usage
 

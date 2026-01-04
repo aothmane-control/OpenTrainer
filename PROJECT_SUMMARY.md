@@ -1,5 +1,17 @@
 # Project Summary: OpenTrainer Android App
 
+## 🔓 Open Source | 🔒 Privacy First | 📶 Offline-Ready
+
+A complete Android application for connecting to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy, displaying real-time training metrics, and executing programmable resistance workouts with GPX-based elevation profiles and interactive map visualization.
+
+## ✨ Core Principles
+
+- **100% Open Source** - MIT License, all code publicly available
+- **Privacy Focused** - No user accounts, no cloud services, no data collection
+- **Offline Training** - Works completely offline (internet only for map tiles)
+- **Your Data Stays Local** - All workout profiles and data stored on device
+- **Zero Tracking** - No analytics, no telemetry, no external connections
+
 ## Overview
 A complete Android application for connecting to Wahoo Kickr Core trainers via Bluetooth Low Energy, displaying real-time training metrics, and executing programmable resistance workouts with interval training.
 
@@ -110,6 +122,9 @@ Multiple protocols for maximum compatibility:
 - Activity KTX 1.8.2
 - Coroutines 1.7.3
 - **MPAndroidChart v3.1.0** - Real-time chart visualization
+- **osmdroid 6.1.18** - OpenStreetMap map viewer (offline tiles supported)
+
+**Privacy Note:** All dependencies are standard Android libraries. Map tiles from OpenStreetMap are only downloaded when explicitly viewing maps - no tracking or user identification occurs.
 
 ### Bluetooth Services
 Standard Bluetooth SIG services:
