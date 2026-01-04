@@ -23,7 +23,8 @@ class IntervalAdapter(
 
         fun bind(interval: WorkoutInterval, position: Int) {
             intervalNumberTextView.text = "Interval ${position + 1}"
-            intervalDetailsTextView.text = "${interval.duration}s @ ${interval.resistance}%"
+            val durationMinutes = interval.duration / 60.0
+            intervalDetailsTextView.text = "%.1f min @ ${interval.resistance}%%".format(durationMinutes)
             
             deleteButton.setOnClickListener {
                 onDeleteClick(position)
