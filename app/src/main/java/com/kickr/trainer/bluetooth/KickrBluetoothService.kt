@@ -202,38 +202,75 @@ class KickrBluetoothService(private val context: Context) {
         
         Log.d(TAG, "Attempting to set resistance to $resistancePercent%")
         
-        // Try Fitness Machine Service first (more common for resistance control)
-        val service = gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)
-        if (service == null) {
-            Log.w(TAG, "Fitness Machine Service not found")
-            return
+        // Try Wahoo Trainer Service first (Kickr-specific)
+        gatt.getService(GattAttributes.WAHOO_TRAINER_SERVICE)?.let { service ->
+            service.getCharacteristic(GattAttributes.WAHOO_TRAINER_CONTROL)?.let { characteristic ->
+                // Wahoo ERG mode command: Set target power based on resistance percentage
+                // Assuming max power ~400W, so resistance % maps to power
+                val targetPower = (resistancePercent * 4).toShort() // 100% = 400W
+                val command = byteArrayOf(
+                    0x42.toByte(), // 'B' - Set ERG mode power
+                    (targetPower.toInt() and 0xFF).toByte(),
+                    ((targetPower.toInt() shr 8) and 0xFF).toByte()
+                )
+                
+                Log.d(TAG, "Trying Wahoo service - Target power: ${targetPower}W, command: ${command.joinToString { "0x%02X".format(it) }}")
+                characteristic.value = command
+                val success = gatt.writeCharacteristic(characteristic)
+                if (success) {
+                    Log.d(TAG, "Successfully sent Wahoo resistance command")
+                    return
+                }
+            }
         }
         
-        val characteristic = service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)
-        if (characteristic == null) {
-            Log.w(TAG, "Fitness Machine Control Point characteristic not found")
-            return
+        // Try Fitness Machine Service (FTMS standard)
+        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
+                // Try Set Target Power (opcode 0x05) - more commonly supported than resistance level
+                val targetPower = (resistancePercent * 4).toShort() // 100% = 400W
+                val powerCommand = byteArrayOf(
+                    0x05.toByte(), // Opcode: Set Target Power
+                    (targetPower.toInt() and 0xFF).toByte(),
+                    ((targetPower.toInt() shr 8) and 0xFF).toByte()
+                )
+                
+                Log.d(TAG, "Trying FTMS Target Power - ${targetPower}W, command: ${powerCommand.joinToString { "0x%02X".format(it) }}")
+                characteristic.value = powerCommand
+                if (gatt.writeCharacteristic(characteristic)) {
+                    Log.d(TAG, "Successfully sent FTMS target power command")
+                    return
+                }
+                
+                // Fallback: Try Set Target Resistance Level (opcode 0x04)
+                val resistanceValue = (resistancePercent * 10).toShort()
+                val resistanceCommand = byteArrayOf(
+                    0x04.toByte(), // Opcode: Set Target Resistance Level
+                    (resistanceValue.toInt() and 0xFF).toByte(),
+                    ((resistanceValue.toInt() shr 8) and 0xFF).toByte()
+                )
+                
+                Log.d(TAG, "Trying FTMS Resistance Level - ${resistancePercent}%, command: ${resistanceCommand.joinToString { "0x%02X".format(it) }}")
+                characteristic.value = resistanceCommand
+                if (gatt.writeCharacteristic(characteristic)) {
+                    Log.d(TAG, "Successfully sent FTMS resistance level command")
+                    return
+                }
+            }
         }
         
-        // Set Target Resistance Level command (opcode 0x04)
-        // Resistance level is in 0.1 percent increments
-        val resistanceValue = (resistancePercent * 10).toShort()
-        val command = byteArrayOf(
-            0x04.toByte(), // Opcode: Set Target Resistance Level
-            (resistanceValue.toInt() and 0xFF).toByte(),
-            ((resistanceValue.toInt() shr 8) and 0xFF).toByte()
-        )
-        
-        Log.d(TAG, "Writing resistance command: ${command.joinToString { "0x%02X".format(it) }}")
-        
-        characteristic.value = command
-        val success = gatt.writeCharacteristic(characteristic)
-        
-        if (success) {
-            Log.d(TAG, "Successfully queued resistance command to $resistancePercent%")
-        } else {
-            Log.e(TAG, "Failed to queue resistance command")
+        // Try Cycling Power Control Point as last resort
+        gatt.getService(GattAttributes.CYCLING_POWER_SERVICE)?.let { service ->
+            service.getCharacteristic(GattAttributes.CYCLING_POWER_CONTROL_POINT)?.let { characteristic ->
+                // Request control
+                val command = byteArrayOf(0x00.toByte()) // Request Control
+                Log.d(TAG, "Trying Cycling Power Control Point")
+                characteristic.value = command
+                gatt.writeCharacteristic(characteristic)
+            }
         }
+        
+        Log.w(TAG, "No resistance control method available or all methods failed")
     }
     
     private fun enableNotifications(gatt: BluetoothGatt) {
