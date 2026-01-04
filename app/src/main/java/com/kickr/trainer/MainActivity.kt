@@ -27,8 +27,17 @@ import com.google.android.material.card.MaterialCardView
 import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
 import com.kickr.trainer.model.Workout
+import com.kickr.trainer.model.WorkoutInterval
+import com.kickr.trainer.model.GpxTrack
 import kotlinx.coroutines.launch
 import android.util.Log
+import java.io.File
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.Marker
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scanButton: Button
     private lateinit var disconnectButton: Button
     private lateinit var setupWorkoutButton: Button
+    private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
@@ -57,7 +67,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workoutIntervalTextView: TextView
     private lateinit var workoutResistanceTextView: TextView
     private lateinit var workoutTimeTextView: TextView
+    private lateinit var viewMapButton: Button
     private lateinit var workoutProfileChart: LineChart
+    private lateinit var mapView: MapView
+    private lateinit var mapCard: MaterialCardView
+    private var currentPositionMarker: Marker? = null
+    private var routePolyline: Polyline? = null
     
     private val powerDataPoints = mutableListOf<Entry>()
     private val speedDataPoints = mutableListOf<Entry>()
@@ -67,6 +82,7 @@ class MainActivity : AppCompatActivity() {
     private var activeWorkout: Workout? = null
     private var workoutTimer: CountDownTimer? = null
     private var workoutElapsedSeconds = 0
+    private var cumulativeDistance = 0.0 // For GPX workouts
 
     private val requestBluetoothPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -119,9 +135,31 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Workout setup cancelled")
         }
     }
+    
+    private val gpxMapLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            result.data?.let { data ->
+                val hasGpxWorkout = data.getBooleanExtra("has_gpx_workout", false)
+                if (hasGpxWorkout && GpxWorkoutHolder.currentTrack != null) {
+                    startGpxWorkout(GpxWorkoutHolder.currentTrack!!)
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize osmdroid configuration BEFORE setContentView
+        Configuration.getInstance().apply {
+            load(this@MainActivity, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this@MainActivity))
+            userAgentValue = "OpenTrainer/1.0"
+            osmdroidBasePath = getExternalFilesDir(null)
+            osmdroidTileCache = File(getExternalFilesDir(null), "osmdroid/tiles")
+        }
+        
         setContentView(R.layout.activity_main)
 
         bluetoothService = KickrBluetoothService(this)
@@ -136,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         scanButton = findViewById(R.id.scanButton)
         disconnectButton = findViewById(R.id.disconnectButton)
         setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
+        viewGpxButton = findViewById(R.id.viewGpxButton)
         stopWorkoutButton = findViewById(R.id.stopWorkoutButton)
         connectionStatusTextView = findViewById(R.id.connectionStatusTextView)
         devicesRecyclerView = findViewById(R.id.devicesRecyclerView)
@@ -151,7 +190,12 @@ class MainActivity : AppCompatActivity() {
         workoutIntervalTextView = findViewById(R.id.workoutIntervalTextView)
         workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
+        viewMapButton = findViewById(R.id.viewMapButton)
         workoutProfileChart = findViewById(R.id.workoutProfileChart)
+        mapView = findViewById(R.id.mapView)
+        mapCard = findViewById(R.id.mapCard)
+        
+        setupMap()
         
         if (workoutStatusCard == null || workoutChartCard == null) {
             Log.e(TAG, "ERROR: Workout cards not found in layout!")
@@ -243,6 +287,173 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+    
+    private fun setupMap() {
+        Log.d(TAG, "Setting up MapView")
+        try {
+            mapView.apply {
+                Log.d(TAG, "MapView instance: $this")
+                
+                // Important: Set tile source FIRST
+                setTileSource(TileSourceFactory.MAPNIK)
+                Log.d(TAG, "Tile source set to MAPNIK")
+                
+                // Enable controls
+                setMultiTouchControls(true)
+                setBuiltInZoomControls(false)
+                
+                // CRITICAL: These settings are essential for tile loading
+                isTilesScaledToDpi = true
+                setUseDataConnection(true)
+                isHorizontalMapRepetitionEnabled = false
+                isVerticalMapRepetitionEnabled = false
+                
+                // Set zoom limits
+                minZoomLevel = 3.0
+                maxZoomLevel = 19.0
+                
+                // Set initial position (Paris) and zoom
+                controller.setZoom(5.0)
+                controller.setCenter(GeoPoint(48.8566, 2.3522))
+                
+                Log.d(TAG, "MapView setup complete, visibility will be: ${View.VISIBLE}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up map", e)
+            e.printStackTrace()
+        }
+    }
+    
+    private fun displayGpxTrackOnMap(track: GpxTrack) {
+        Log.d(TAG, "=== Displaying GPX track on map ===")
+        Log.d(TAG, "Track: ${track.name}, ${track.points.size} points")
+        
+        try {
+            // Ensure map is visible and laid out
+            if (mapView.width == 0 || mapView.height == 0) {
+                Log.w(TAG, "MapView not laid out yet, posting display")
+                mapView.post {
+                    displayGpxTrackOnMap(track)
+                }
+                return
+            }
+            
+            Log.d(TAG, "MapView dimensions: ${mapView.width}x${mapView.height}")
+            
+            // Clear existing overlays
+            mapView.overlays.clear()
+            currentPositionMarker = null
+            routePolyline = null
+            
+            if (track.points.isEmpty()) {
+                Log.w(TAG, "No points in GPX track")
+                return
+            }
+            
+            // Convert to GeoPoints
+            val geoPoints = track.points.map { point ->
+                GeoPoint(point.latitude, point.longitude)
+            }
+            
+            if (geoPoints.isEmpty()) {
+                Log.w(TAG, "No valid geo points")
+                return
+            }
+            
+            Log.d(TAG, "Points range: ${geoPoints.first()} to ${geoPoints.last()}")
+            
+            // Create and add polyline
+            val polyline = Polyline(mapView).apply {
+                setPoints(geoPoints)
+                outlinePaint.color = Color.BLUE
+                outlinePaint.strokeWidth = 10f
+                outlinePaint.isAntiAlias = true
+            }
+            
+            mapView.overlays.add(polyline)
+            routePolyline = polyline
+            
+            Log.d(TAG, "Polyline added, ${mapView.overlays.size} overlays total")
+            
+            // Zoom to show entire route with proper padding
+            if (geoPoints.size > 1) {
+                val bounds = org.osmdroid.util.BoundingBox.fromGeoPoints(geoPoints)
+                Log.d(TAG, "Zooming to bounds: $bounds")
+                
+                // Calculate center point
+                val centerLat = (bounds.latNorth + bounds.latSouth) / 2
+                val centerLon = (bounds.lonEast + bounds.lonWest) / 2
+                val center = GeoPoint(centerLat, centerLon)
+                
+                // Calculate appropriate zoom level to fit the bounds
+                val latSpan = Math.abs(bounds.latNorth - bounds.latSouth)
+                val lonSpan = Math.abs(bounds.lonEast - bounds.lonWest)
+                
+                // Estimate zoom level based on span with better scaling
+                val maxSpan = maxOf(latSpan, lonSpan) * 1.3 // Add 30% padding
+                val zoom = when {
+                    maxSpan > 10.0 -> 6.0
+                    maxSpan > 5.0 -> 7.5
+                    maxSpan > 2.0 -> 9.0
+                    maxSpan > 1.0 -> 10.5
+                    maxSpan > 0.5 -> 11.5
+                    maxSpan > 0.25 -> 12.5
+                    maxSpan > 0.125 -> 13.5
+                    maxSpan > 0.05 -> 14.5
+                    maxSpan > 0.025 -> 15.5
+                    else -> 16.0
+                }
+                
+                Log.d(TAG, "Setting center: $center, zoom: $zoom (span: lat=$latSpan, lon=$lonSpan, max=$maxSpan)")
+                
+                // Set center and zoom
+                mapView.controller.setCenter(center)
+                mapView.controller.setZoom(zoom)
+            } else {
+                // Single point - just center on it
+                mapView.controller.setCenter(geoPoints.first())
+                mapView.controller.setZoom(16.0)
+            }
+            
+            // Force redraw
+            mapView.invalidate()
+            
+            Log.d(TAG, "=== Map display complete ===")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error displaying GPX track on map", e)
+            e.printStackTrace()
+            throw e
+        }
+    }
+    
+    private fun updateMapPosition(distanceMeters: Double) {
+        try {
+            val track = activeWorkout?.gpxTrack ?: return
+            val position = track.getPointAtDistance(distanceMeters) ?: return
+            
+            // Remove old marker
+            currentPositionMarker?.let { mapView.overlays.remove(it) }
+            
+            // Create new marker
+            val geoPoint = GeoPoint(position.latitude, position.longitude)
+            val marker = Marker(mapView).apply {
+                this.position = geoPoint
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "Current Position"
+            }
+            
+            mapView.overlays.add(marker)
+            currentPositionMarker = marker
+            
+            // Center map on current position
+            mapView.controller.animateTo(geoPoint)
+            
+            mapView.invalidate()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating map position", e)
+            // Don't crash, just skip map update
+        }
+    }
 
     private fun setupRecyclerView() {
         deviceAdapter = DeviceAdapter { device ->
@@ -309,6 +520,7 @@ class MainActivity : AppCompatActivity() {
                         scanButton.visibility = View.GONE
                         disconnectButton.visibility = View.VISIBLE
                         setupWorkoutButton.visibility = View.VISIBLE
+                        viewGpxButton.visibility = View.VISIBLE
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.VISIBLE
                         
@@ -402,6 +614,18 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Setup Workout button clicked")
             val intent = Intent(this, WorkoutSetupActivity::class.java)
             workoutSetupLauncher.launch(intent)
+        }
+        
+        viewGpxButton.setOnClickListener {
+            val intent = Intent(this, GpxMapActivity::class.java)
+            gpxMapLauncher.launch(intent)
+        }
+        
+        viewMapButton.setOnClickListener {
+            // Open map with current position during GPX workout
+            val intent = Intent(this, GpxMapActivity::class.java)
+            intent.putExtra(GpxMapActivity.EXTRA_CURRENT_DISTANCE, cumulativeDistance)
+            startActivity(intent)
         }
         
         stopWorkoutButton.setOnClickListener {
@@ -587,15 +811,128 @@ class MainActivity : AppCompatActivity() {
         workoutTimer = null
         activeWorkout = null
         workoutElapsedSeconds = 0
+        cumulativeDistance = 0.0
         
         workoutStatusCard.visibility = View.GONE
         workoutChartCard.visibility = View.GONE
+        mapCard.visibility = View.GONE
         setupWorkoutButton.visibility = View.VISIBLE
+        viewGpxButton.visibility = View.VISIBLE
         stopWorkoutButton.visibility = View.GONE
         
         // Reset resistance to 0
         bluetoothService.setResistance(0)
         Log.d(TAG, "Resistance reset to 0%")
+    }
+    
+    private fun startGpxWorkout(gpxTrack: GpxTrack) {
+        Log.d(TAG, "Starting GPX workout: ${gpxTrack.name}")
+        
+        // Store track in holder for map activity
+        GpxWorkoutHolder.currentTrack = gpxTrack
+        
+        // Estimate workout duration based on track distance and average speed (20 km/h)
+        val estimatedDurationSeconds = ((gpxTrack.totalDistance / 1000) / 20.0 * 3600).toInt()
+        
+        // Create a workout with the GPX track
+        activeWorkout = Workout(
+            totalDuration = estimatedDurationSeconds,
+            intervals = listOf(WorkoutInterval(estimatedDurationSeconds, 50)), // Dummy interval
+            gpxTrack = gpxTrack
+        )
+        
+        cumulativeDistance = 0.0
+        workoutElapsedSeconds = 0
+        
+        // Show workout UI
+        workoutStatusCard.visibility = View.VISIBLE
+        setupWorkoutButton.visibility = View.GONE
+        viewGpxButton.visibility = View.GONE
+        stopWorkoutButton.visibility = View.VISIBLE
+        viewMapButton.visibility = View.GONE // Hide the external map button
+        
+        // Try to show and setup map
+        try {
+            mapCard.visibility = View.VISIBLE
+            displayGpxTrackOnMap(gpxTrack)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading map", e)
+            Toast.makeText(this, "Map unavailable: ${e.message}", Toast.LENGTH_SHORT).show()
+            // Continue without map
+            mapCard.visibility = View.GONE
+        }
+        
+        // Update workout info
+        workoutIntervalTextView.text = "GPX: ${gpxTrack.name}"
+        workoutTimeTextView.text = String.format("%.2f / %.2f km", 0.0, gpxTrack.totalDistance / 1000)
+        workoutResistanceTextView.text = "Resistance: 50%"
+        
+        Toast.makeText(this, "GPX workout started! Resistance based on elevation", Toast.LENGTH_LONG).show()
+        
+        // Start workout timer
+        workoutTimer = object : CountDownTimer(estimatedDurationSeconds.toLong() * 1000, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                workoutElapsedSeconds++
+                updateGpxWorkout()
+            }
+            
+            override fun onFinish() {
+                workoutIntervalTextView.text = getString(R.string.workout_complete)
+                Toast.makeText(this@MainActivity, getString(R.string.workout_complete), Toast.LENGTH_LONG).show()
+                stopWorkout()
+            }
+        }.start()
+    }
+    
+    private fun updateGpxWorkout() {
+        val workout = activeWorkout ?: return
+        val gpxTrack = workout.gpxTrack ?: return
+        
+        // Get current speed from trainer data (already in km/h)
+        val currentSpeed = bluetoothService.trainerData.value.speed
+        
+        // Validate speed (sanity check - if > 100 km/h, likely bad data)
+        val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
+        
+        // Calculate distance traveled in last second
+        val distanceThisSecond = validSpeed / 3.6 // convert km/h to m/s
+        cumulativeDistance += distanceThisSecond
+        
+        // Clamp distance to track length
+        cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
+        
+        // Get resistance based on current position on track
+        val targetResistance = workout.getResistanceAtDistance(cumulativeDistance)
+        val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
+        
+        // Update map position
+        updateMapPosition(cumulativeDistance)
+        
+        // Update UI
+        workoutTimeTextView.text = String.format(
+            "%.2f / %.2f km", 
+            cumulativeDistance / 1000, 
+            gpxTrack.totalDistance / 1000
+        )
+        workoutResistanceTextView.text = String.format(
+            "Resistance: %d%% (%.1f%% grade)", 
+            targetResistance,
+            gradient
+        )
+        
+        // Send resistance command to trainer
+        bluetoothService.setResistance(targetResistance)
+        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h, resistance=%d%%, gradient=%.1f%%".format(
+            cumulativeDistance, validSpeed, targetResistance, gradient
+        ))
+        
+        // Check if workout complete
+        if (cumulativeDistance >= gpxTrack.totalDistance) {
+            workoutTimer?.cancel()
+            workoutIntervalTextView.text = getString(R.string.workout_complete)
+            Toast.makeText(this, "Route complete!", Toast.LENGTH_LONG).show()
+            stopWorkout()
+        }
     }
 
     private fun checkPermissionsAndScan() {
@@ -644,10 +981,21 @@ class MainActivity : AppCompatActivity() {
         bluetoothService.startScan()
     }
 
+    override fun onResume() {
+        super.onResume()
+        mapView.onResume()
+    }
+    
+    override fun onPause() {
+        super.onPause()
+        mapView.onPause()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopWorkout()
         bluetoothService.stopScan()
         bluetoothService.disconnect()
+        mapView.onDetach()
     }
 }

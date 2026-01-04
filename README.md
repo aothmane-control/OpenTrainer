@@ -26,6 +26,16 @@ An Android application that connects to a Wahoo Kickr Core trainer via Bluetooth
   - Load previously saved workouts
   - Delete unwanted workout profiles
   - Multiple workout profiles support
+- 🗺️ **GPX Track Viewer & Elevation-Based Workouts:**
+  - Load and visualize GPX files on OpenStreetMap
+  - **Start GPX-based workouts with automatic resistance control**
+  - **Resistance adapts dynamically based on elevation profile**
+  - **Real-time position tracking based on distance traveled**
+  - View live position on map during workout
+  - Display track information (distance, elevation, gradient)
+  - Support for heart rate, cadence, and power data in GPX
+  - Interactive map with zoom and pan
+  - Automatic calculation of gradient and resistance mapping
 - 📱 Modern Material Design UI
 - 🔄 Automatic data updates
 

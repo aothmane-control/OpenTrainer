@@ -143,11 +143,11 @@ class KickrBluetoothService(private val context: Context) {
             value: ByteArray
         ) {
             when (characteristic.uuid) {
+                GattAttributes.INDOOR_BIKE_DATA -> {
+                    parseIndoorBikeData(value)
+                }
                 GattAttributes.CYCLING_POWER_MEASUREMENT -> {
                     parseCyclingPowerMeasurement(value)
-                }
-                GattAttributes.CSC_MEASUREMENT -> {
-                    parseCscMeasurement(value)
                 }
                 GattAttributes.HEART_RATE_MEASUREMENT -> {
                     parseHeartRateMeasurement(value)
@@ -274,38 +274,54 @@ class KickrBluetoothService(private val context: Context) {
     }
     
     private fun enableNotifications(gatt: BluetoothGatt) {
+        Log.d(TAG, "=== Discovering services and enabling notifications ===")
+        
+        // Log all available services
+        gatt.services.forEach { service ->
+            Log.d(TAG, "Service: ${service.uuid}")
+            service.characteristics.forEach { char ->
+                Log.d(TAG, "  Characteristic: ${char.uuid}")
+            }
+        }
+        
         // Enable Cycling Power notifications
         gatt.getService(GattAttributes.CYCLING_POWER_SERVICE)?.let { service ->
+            Log.d(TAG, "Found Cycling Power Service")
             service.getCharacteristic(GattAttributes.CYCLING_POWER_MEASUREMENT)?.let { characteristic ->
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
+                    Log.d(TAG, "Enabled Cycling Power Measurement notifications")
                 }
             }
-        }
+        } ?: Log.w(TAG, "Cycling Power Service NOT found")
         
-        // Enable CSC notifications
-        gatt.getService(GattAttributes.CYCLING_SPEED_CADENCE_SERVICE)?.let { service ->
-            service.getCharacteristic(GattAttributes.CSC_MEASUREMENT)?.let { characteristic ->
+        // Enable FTMS Indoor Bike Data notifications (primary source for speed)
+        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
+            Log.d(TAG, "Found Fitness Machine Service")
+            service.getCharacteristic(GattAttributes.INDOOR_BIKE_DATA)?.let { characteristic ->
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
+                    Log.d(TAG, "Enabled FTMS Indoor Bike Data notifications")
                 }
-            }
-        }
+            } ?: Log.w(TAG, "FTMS Indoor Bike Data characteristic NOT found")
+        } ?: Log.w(TAG, "Fitness Machine Service NOT found")
         
         // Enable Heart Rate notifications if available
         gatt.getService(GattAttributes.HEART_RATE_SERVICE)?.let { service ->
+            Log.d(TAG, "Found Heart Rate Service")
             service.getCharacteristic(GattAttributes.HEART_RATE_MEASUREMENT)?.let { characteristic ->
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
+                    Log.d(TAG, "Enabled Heart Rate notifications")
                 }
             }
-        }
+        } ?: Log.d(TAG, "Heart Rate Service not available (optional)")
     }
     
     private fun parseCyclingPowerMeasurement(data: ByteArray) {
@@ -318,7 +334,7 @@ class KickrBluetoothService(private val context: Context) {
         val power = buffer.getShort().toInt() and 0xFFFF
         currentPower = power
         
-        Log.d(TAG, "Power: $power W")
+        Log.d(TAG, "Cycling Power: power=$power W, flags=0x${flags.toString(16)}, dataSize=${data.size}, bufferRemaining=${buffer.remaining()}, hasWheel=${flags and 0x10 != 0}, hasCrank=${flags and 0x20 != 0}")
         
         // Parse additional fields based on flags
         if (flags and 0x01 != 0) { // Pedal Power Balance Present
@@ -330,25 +346,41 @@ class KickrBluetoothService(private val context: Context) {
         }
         
         if (flags and 0x10 != 0) { // Wheel Revolution Data Present
+            Log.d(TAG, "Wheel data flag set, buffer remaining: ${buffer.remaining()}")
             if (buffer.remaining() >= 6) {
                 val wheelRevolutions = buffer.getInt().toLong() and 0xFFFFFFFFL
                 val wheelEventTime = buffer.getShort().toInt() and 0xFFFF
                 
                 if (lastWheelRevolutions != null && lastWheelEventTime != null) {
-                    val revDelta = wheelRevolutions - lastWheelRevolutions!!
+                    val revDelta = (wheelRevolutions - lastWheelRevolutions!!).toFloat()
                     var timeDelta = wheelEventTime - lastWheelEventTime!!
                     if (timeDelta < 0) timeDelta += 65536
                     
                     if (timeDelta > 0) {
-                        // Speed calculation (assuming 700c wheel: 2.105m circumference)
-                        val wheelCircumference = 2.105f
-                        val speed = (revDelta * wheelCircumference * 1024.0f / timeDelta) * 3.6f // km/h
-                        currentSpeed = if (speed > 0) speed else 0f
+                        if (revDelta > 0) {
+                            val timeInSeconds = timeDelta / 1024.0f
+                            val distanceMeters = revDelta * 2.105f
+                            val speedMps = distanceMeters / timeInSeconds
+                            val speedKmh = speedMps * 3.6f
+                            
+                            if (speedKmh >= 0 && speedKmh < 80) {
+                                currentSpeed = speedKmh
+                                Log.d(TAG, "Speed: $speedKmh km/h (revDelta=$revDelta, timeDelta=$timeDelta)")
+                            }
+                        } else {
+                            // No wheel movement = 0 speed
+                            currentSpeed = 0f
+                            Log.d(TAG, "Speed: 0 km/h (no wheel movement)")
+                        }
                     }
+                } else {
+                    Log.d(TAG, "First wheel data received: rev=$wheelRevolutions, time=$wheelEventTime")
                 }
                 
                 lastWheelRevolutions = wheelRevolutions
                 lastWheelEventTime = wheelEventTime
+            } else {
+                Log.w(TAG, "Wheel data flag set but not enough buffer data: ${buffer.remaining()} bytes")
             }
         }
         
@@ -366,7 +398,10 @@ class KickrBluetoothService(private val context: Context) {
                         // Cadence calculation
                         val cadence = (revDelta * 1024 * 60) / timeDelta
                         currentCadence = if (cadence > 0) cadence else 0
+                        Log.d(TAG, "Cadence: $currentCadence RPM (revDelta=$revDelta, timeDelta=$timeDelta)")
                     }
+                } else {
+                    Log.d(TAG, "First crank data received: rev=$crankRevolutions, time=$crankEventTime")
                 }
                 
                 lastCrankRevolutions = crankRevolutions
@@ -381,20 +416,35 @@ class KickrBluetoothService(private val context: Context) {
         val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
         val flags = buffer.get().toInt() and 0xFF
         
+        Log.d(TAG, "CSC Measurement - flags: 0x${flags.toString(16)}")
+        
         if (flags and 0x01 != 0) { // Wheel Revolution Data Present
             if (buffer.remaining() >= 6) {
                 val wheelRevolutions = buffer.getInt().toLong() and 0xFFFFFFFFL
                 val wheelEventTime = buffer.getShort().toInt() and 0xFFFF
                 
+                Log.d(TAG, "CSC Wheel: revolutions=$wheelRevolutions, eventTime=$wheelEventTime")
+                
                 if (lastWheelRevolutions != null && lastWheelEventTime != null) {
-                    val revDelta = wheelRevolutions - lastWheelRevolutions!!
+                    val revDelta = (wheelRevolutions - lastWheelRevolutions!!).toFloat()
                     var timeDelta = wheelEventTime - lastWheelEventTime!!
                     if (timeDelta < 0) timeDelta += 65536
                     
-                    if (timeDelta > 0) {
-                        val wheelCircumference = 2.105f
-                        val speed = (revDelta * wheelCircumference * 1024.0f / timeDelta) * 3.6f
-                        currentSpeed = if (speed > 0) speed else 0f
+                    if (timeDelta > 0 && revDelta > 0) {
+                        // Wheel event time is in 1/1024 seconds
+                        val timeInSeconds = timeDelta / 1024.0f
+                        val wheelCircumference = 2.105f // meters for 700c wheel
+                        val distanceMeters = revDelta * wheelCircumference
+                        val speedMps = distanceMeters / timeInSeconds
+                        val speedKmh = speedMps * 3.6f
+                        
+                        // Only update if speed is reasonable (0-80 km/h)
+                        if (speedKmh > 0 && speedKmh < 80) {
+                            currentSpeed = speedKmh
+                            Log.d(TAG, "CSC Speed: revDelta=$revDelta, timeDelta=$timeDelta, timeSeconds=$timeInSeconds, speed=$currentSpeed km/h")
+                        } else {
+                            Log.w(TAG, "CSC Speed out of range: $speedKmh km/h - ignoring")
+                        }
                     }
                 }
                 
@@ -442,10 +492,91 @@ class KickrBluetoothService(private val context: Context) {
         Log.d(TAG, "Heart Rate: $currentHeartRate BPM")
     }
     
+    private fun parseIndoorBikeData(data: ByteArray) {
+        if (data.size < 3) return
+        
+        try {
+            // Log raw bytes for debugging
+            val hexString = data.joinToString(" ") { "0x%02X".format(it) }
+            Log.d(TAG, "Indoor Bike Data RAW: $hexString")
+            
+            val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+            val flags = buffer.getShort().toInt() and 0xFFFF
+            
+            Log.d(TAG, "Indoor Bike Data - flags: 0x${flags.toString(16).padStart(4, '0')}, size: ${data.size} bytes")
+            
+            // According to FTMS spec:
+            // Bit 0 = 0: Instantaneous Speed is present (UINT16, 0.01 km/h resolution)
+            // Bit 0 = 1: More Data flag (speed not present in this message)
+            
+            // Instantaneous Speed - present when bit 0 is CLEAR (0)
+            if (flags and 0x01 == 0) {
+                if (buffer.remaining() >= 2) {
+                    val speedRaw = buffer.getShort().toInt() and 0xFFFF
+                    currentSpeed = speedRaw / 100.0f // Convert from 0.01 km/h to km/h
+                    Log.d(TAG, "FTMS Speed: raw=$speedRaw, speed=$currentSpeed km/h")
+                } else {
+                    Log.w(TAG, "Speed should be present but not enough data")
+                }
+            } else {
+                Log.d(TAG, "Speed not present in this message (More Data flag set)")
+            }
+            
+            // Average Speed - if bit 1 is set
+            if (flags and 0x02 != 0 && buffer.remaining() >= 2) {
+                val avgSpeedRaw = buffer.getShort().toInt() and 0xFFFF
+                val avgSpeed = avgSpeedRaw / 100.0f
+                Log.d(TAG, "Average Speed: raw=$avgSpeedRaw, converted=$avgSpeed km/h")
+            }
+            
+            // Instantaneous Cadence - if bit 2 is set
+            if (flags and 0x04 != 0 && buffer.remaining() >= 2) {
+                val cadenceRaw = buffer.getShort().toInt() and 0xFFFF
+                currentCadence = cadenceRaw / 2 // 0.5 RPM resolution
+                Log.d(TAG, "Cadence: raw=$cadenceRaw, converted=$currentCadence RPM")
+            }
+            
+            // Skip Average Cadence if present (bit 3)
+            if (flags and 0x08 != 0 && buffer.remaining() >= 2) {
+                buffer.getShort() // Skip
+            }
+            
+            // Skip Total Distance if present (bit 4)
+            if (flags and 0x10 != 0 && buffer.remaining() >= 3) {
+                buffer.get() // Skip 3 bytes
+                buffer.getShort()
+            }
+            
+            // Skip Resistance Level if present (bit 5)
+            if (flags and 0x20 != 0 && buffer.remaining() >= 2) {
+                buffer.getShort() // Skip
+            }
+            
+            // Instantaneous Power - if bit 6 is set
+            if (flags and 0x40 != 0 && buffer.remaining() >= 2) {
+                val powerRaw = buffer.getShort().toInt() and 0xFFFF
+                currentPower = powerRaw // Already in watts
+                Log.d(TAG, "Power: raw=$powerRaw, watts=$currentPower W")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing Indoor Bike Data", e)
+            e.printStackTrace()
+        }
+    }
+    
     private fun updateTrainerData() {
+        // Calculate speed from power (smart trainers often don't provide accurate speed data)
+        // Using physics-based approximation: speed ≈ ∛(power) * constant
+        // This gives: 10W≈11km/h, 50W≈18km/h, 100W≈23km/h, 200W≈29km/h, 300W≈33km/h
+        val calculatedSpeed = if (currentPower > 0) {
+            Math.pow(currentPower.toDouble(), 1.0/3.0).toFloat() * 5.0f
+        } else {
+            0f
+        }
+        
         _trainerData.value = TrainerData(
             power = currentPower,
-            speed = currentSpeed,
+            speed = calculatedSpeed,
             cadence = currentCadence,
             heartRate = currentHeartRate,
             timestamp = System.currentTimeMillis()

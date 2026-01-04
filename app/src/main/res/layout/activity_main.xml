@@ -120,6 +120,17 @@
                         android:textSize="14sp"
                         android:textColor="@color/md_theme_light_onPrimaryContainer"
                         tools:text="Time: 5:00" />
+                    
+                    <Button
+                        android:id="@+id/viewMapButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="View Map"
+                        android:visibility="gone"
+                        android:drawableStart="@android:drawable/ic_dialog_map"
+                        android:drawablePadding="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
             
@@ -338,6 +349,37 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/mapCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone"
+                app:cardCornerRadius="8dp"
+                app:cardElevation="4dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Route Map"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <org.osmdroid.views.MapView
+                        android:id="@+id/mapView"
+                        android:layout_width="match_parent"
+                        android:layout_height="300dp"
+                        android:layout_marginTop="8dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
@@ -348,8 +390,23 @@
         android:layout_marginTop="8dp"
         android:text="@string/setup_workout"
         android:visibility="gone"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/viewGpxButton"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/dataScrollView"
+        app:layout_constraintBottom_toTopOf="@id/disconnectButton"
+        tools:visibility="visible" />
+    
+    <Button
+        android:id="@+id/viewGpxButton"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:text="View GPX"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/setupWorkoutButton"
         app:layout_constraintTop_toBottomOf="@id/dataScrollView"
         app:layout_constraintBottom_toTopOf="@id/disconnectButton"
         tools:visibility="visible" />
