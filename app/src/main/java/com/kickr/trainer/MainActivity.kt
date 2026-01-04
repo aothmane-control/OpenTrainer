@@ -431,6 +431,8 @@ class MainActivity : AppCompatActivity() {
             val track = activeWorkout?.gpxTrack ?: return
             val position = track.getPointAtDistance(distanceMeters) ?: return
             
+            Log.d(TAG, "Updating map position: distance=${distanceMeters}m, lat=${position.latitude}, lon=${position.longitude}")
+            
             // Remove old marker
             currentPositionMarker?.let { mapView.overlays.remove(it) }
             
@@ -440,15 +442,28 @@ class MainActivity : AppCompatActivity() {
                 this.position = geoPoint
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                 title = "Current Position"
+                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
             }
             
             mapView.overlays.add(marker)
             currentPositionMarker = marker
             
-            // Center map on current position
+            // Center map on current position with zoom for ~500m x 300m view
+            // At latitude ~45°, zoom level 16 shows roughly 500m width
+            // Adjust based on latitude: higher latitudes need higher zoom
+            val latitude = position.latitude
+            val zoomLevel = when {
+                Math.abs(latitude) > 60 -> 16.5  // Polar regions
+                Math.abs(latitude) > 45 -> 16.0  // Mid latitudes
+                else -> 15.5  // Equatorial regions
+            }
+            
+            mapView.controller.setZoom(zoomLevel)
             mapView.controller.animateTo(geoPoint)
             
             mapView.invalidate()
+            
+            Log.d(TAG, "Map position updated successfully with zoom $zoomLevel")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating map position", e)
             // Don't crash, just skip map update
