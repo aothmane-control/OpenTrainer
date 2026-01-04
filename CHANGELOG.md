@@ -124,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No user accounts or cloud services
 - All data stored locally
 - No analytics or telemetry
-- Open source (MIT License)
+- Open source (CC BY-NC 4.0 License)
 
 ---
 

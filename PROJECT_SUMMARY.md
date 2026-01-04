@@ -6,7 +6,7 @@ A complete Android application for connecting to Wahoo Kickr Core and compatible
 
 ## ✨ Core Principles
 
-- **100% Open Source** - MIT License, all code publicly available
+- **100% Open Source** - CC BY-NC 4.0 License, all code publicly available
 - **Privacy Focused** - No user accounts, no cloud services, no data collection
 - **Offline Training** - Works completely offline (internet only for map tiles)
 - **Your Data Stays Local** - All workout profiles and history stored on device
@@ -86,7 +86,7 @@ kickr_android/
 ├── README.md                                     # Comprehensive user documentation
 ├── PROJECT_SUMMARY.md                            # This file
 ├── CHANGELOG.md                                  # Version history and changes
-└── LICENSE                                       # MIT License
+└── LICENSE                                       # CC BY-NC 4.0 License
 ```
 │                   └── data_extraction_rules.xml
 ├── build.gradle.kts                              # Project-level build configuration
@@ -95,7 +95,7 @@ kickr_android/
 ├── README.md                                     # Comprehensive user documentation
 ├── PROJECT_SUMMARY.md                            # This file
 ├── CHANGELOG.md                                  # Version history and changes
-└── LICENSE                                       # MIT License
+└── LICENSE                                       # CC BY-NC 4.0 License
 ```
 
 ## Key Features Implemented

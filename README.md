@@ -319,7 +319,7 @@ Example structure:
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is open source and available under the CC BY-NC 4.0 License.
 
 ## Contributing
 
