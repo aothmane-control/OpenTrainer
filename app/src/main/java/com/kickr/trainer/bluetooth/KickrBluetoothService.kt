@@ -207,12 +207,19 @@ class KickrBluetoothService(private val context: Context) {
         
         Log.d(TAG, "Attempting to set resistance to $resistancePercent%")
         
+        // Convert resistance percentage to target power using a quadratic curve
+        // This makes lower percentages feel more responsive
+        // Formula: power = 50W + (resistancePercent/100)^2 * 350W
+        // 0% = 50W (minimum feel), 50% = ~137W, 100% = 400W
+        val normalizedResistance = resistancePercent / 100.0
+        val targetPower = (50 + normalizedResistance * normalizedResistance * 350).toInt().toShort()
+        
+        Log.d(TAG, "Resistance $resistancePercent% mapped to ${targetPower}W (quadratic curve)")
+        
         // Try Wahoo Trainer Service first (Kickr-specific)
         gatt.getService(GattAttributes.WAHOO_TRAINER_SERVICE)?.let { service ->
             service.getCharacteristic(GattAttributes.WAHOO_TRAINER_CONTROL)?.let { characteristic ->
-                // Wahoo ERG mode command: Set target power based on resistance percentage
-                // Assuming max power ~400W, so resistance % maps to power
-                val targetPower = (resistancePercent * 4).toShort() // 100% = 400W
+                // Wahoo ERG mode command: Set target power
                 val command = byteArrayOf(
                     0x42.toByte(), // 'B' - Set ERG mode power
                     (targetPower.toInt() and 0xFF).toByte(),
@@ -233,7 +240,6 @@ class KickrBluetoothService(private val context: Context) {
         gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
             service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
                 // Try Set Target Power (opcode 0x05) - more commonly supported than resistance level
-                val targetPower = (resistancePercent * 4).toShort() // 100% = 400W
                 val powerCommand = byteArrayOf(
                     0x05.toByte(), // Opcode: Set Target Power
                     (targetPower.toInt() and 0xFF).toByte(),
