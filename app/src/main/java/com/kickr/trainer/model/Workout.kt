@@ -49,15 +49,27 @@ data class Workout(
     }
     
     private fun calculateResistanceFromGradient(gradientPercent: Double): Int {
-        // Gradient-based resistance mapping
-        return when {
-            gradientPercent < -1.0 -> 0 // Downhill > 1%
-            gradientPercent < 0.0 -> 20 // Slight downhill
-            gradientPercent < 2.0 -> 30 // Flat to slight incline
-            gradientPercent < 4.0 -> 45 // Moderate incline
-            gradientPercent < 6.0 -> 60 // Steep incline
-            gradientPercent < 8.0 -> 75 // Very steep
-            else -> 90 // Extremely steep (>8%)
-        }.coerceIn(0, 100)
+        // Physics-based resistance mapping inspired by real cycling physics
+        // Smoother, more progressive curve based on power requirements
+        // Formula considers that power increases non-linearly with gradient
+        
+        // Base resistance from gradient (scaled by 8 for better feel)
+        val baseResistance = gradientPercent * 8.0
+        
+        // Add quadratic term for steep grades (gradient effect compounds)
+        val quadraticTerm = if (gradientPercent > 0) {
+            (gradientPercent * gradientPercent) * 0.5
+        } else {
+            0.0
+        }
+        
+        // Minimum resistance on downhills, progressive on uphills
+        val totalResistance = when {
+            gradientPercent < -2.0 -> 5  // Steep downhill - minimal resistance
+            gradientPercent < 0.0 -> 15 + gradientPercent * 5  // Gentle downhill
+            else -> 25 + baseResistance + quadraticTerm  // Uphill with physics
+        }
+        
+        return totalResistance.toInt().coerceIn(0, 100)
     }
 }
