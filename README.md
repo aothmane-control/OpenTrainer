@@ -25,8 +25,8 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
 - 📊 Display real-time data:
   - Power (Watts)
   - Cadence (RPM)
-  - Speed (km/h) - calculated from power
-  - Heart Rate (BPM)
+  - Speed (km/h) - calculated from power and wheel speed
+  - Distance (km) - tracked throughout workout
 - 📈 Real-time charts:
   - Power history (last 20 seconds)
   - Speed history (last 20 seconds)
@@ -39,15 +39,19 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
   - Visual resistance profile chart showing the entire workout plan
   - Real-time progress indicator during workout execution
   - Automatic resistance control throughout the workout
+  - **Pause and resume workouts** at any time
+  - **Distance tracking** displayed in real-time during workout
 - 💾 **Workout Management:**
   - Save named workout profiles for reuse
   - Load previously saved workouts
   - Delete unwanted workout profiles
   - Multiple workout profiles support
 - 📊 **Workout History & Analytics:**
-  - Automatic workout data recording (power, speed, cadence, heart rate, resistance, distance)
+  - Automatic workout data recording (power, speed, cadence, resistance, distance)
   - Complete workout summary with interactive charts after each session
   - Historical workout viewer with searchable list
+  - **Multi-select and batch delete** workouts
+  - **View workout history even when disconnected**
   - Share workout results
   - All data stored locally on device
 - 🗺️ **GPX Track Viewer & Elevation-Based Workouts:**
@@ -57,10 +61,11 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
   - **Real-time position tracking based on distance traveled**
   - View live position on map during workout
   - Display track information (distance, elevation, gradient)
-  - Support for heart rate, cadence, and power data in GPX
+  - Support for power and cadence data in GPX
   - Interactive map with zoom and pan
   - Automatic calculation of gradient and resistance mapping
   - Distance tracking for all workout types
+  - **Pause and resume GPX workouts**
 - 📱 Modern Material Design UI with app toolbar
 - 🔄 Automatic data updates
 - ℹ️ About dialog with copyright information
@@ -76,18 +81,21 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
 ## Bluetooth Services Supported
 
 The app implements standard Bluetooth SIG services:
-- **Cycling Power Service (0x1818)** - For power measurements
-- **Cycling Speed and Cadence Service (0x1816)** - For speed and cadence
-- **Heart Rate Service (0x180D)** - For heart rate data (optional)
-- **Fitness Machine Service (0x1826)** - For resistance control
+- **Fitness Machine Service (0x1826)** - Primary service for resistance control and data
+  - Indoor Bike Data characteristic for power, speed, cadence
+  - Fitness Machine Control Point for resistance commands
+  - Start/Resume command (opcode 0x07) for activating speed reporting
+  - Set Wheel Circumference (opcode 0x13) for accurate speed calculation
+- **Cycling Power Service (0x1818)** - For power measurements (optional, not used with FTMS)
+- **Cycling Speed and Cadence Service (0x1816)** - For speed and cadence (optional, not used with FTMS)
 
 ### Resistance Control
 
-The app uses multiple protocols to control trainer resistance:
-1. **Wahoo Proprietary Protocol** - Direct resistance control via Wahoo's custom service
-2. **FTMS Target Power** - Standard Fitness Machine Service power control
-3. **FTMS Resistance Level** - Standard Fitness Machine Service resistance control
-4. **Cycling Power Control Point** - Alternative power control method
+The app uses the Fitness Machine Service (FTMS) for resistance control:
+- **Set Target Resistance Level (opcode 0x04)** - Direct resistance percentage control (0-100%)
+- Sends resistance commands with 200ms minimum delay between commands to prevent BLE queue overflow
+- Automatically requests control before each resistance change
+- Compatible with Wahoo Kickr and other FTMS-compliant trainers
 
 ## Installation
 
@@ -137,14 +145,22 @@ The app requires the following permissions:
   - Elapsed time and remaining time
   - Current interval number
   - Target resistance for the current interval
+  - **Current distance traveled**
 - The resistance profile chart displays:
   - Blue filled area: Complete workout resistance plan
   - Red dashed line: Current position in the workout
   - Dynamic Y-axis: Scaled to 110% of maximum resistance for better visibility
+  - Axis labels showing resistance values (0-100%+)
 - Resistance is automatically adjusted at each interval transition
 - Distance is tracked automatically for all workouts
-- All data (power, speed, cadence, heart rate, resistance, distance) is recorded every second
-- Tap "Stop Workout" to end early
+- All data (power, speed, cadence, resistance, distance) is recorded every second
+- **Pause/Resume**: Tap "Pause Workout" to pause, then "Resume Workout" to continue
+  - Timer stops during pause
+  - Distance tracking pauses
+  - Data recording pauses
+- **Stop Early**: Tap "Stop Workout" to end the workout prematurely
+  - Workout is saved to history
+  - Summary screen is displayed
 
 ### After Workout
 - Workout summary screen displays automatically with:
@@ -162,10 +178,17 @@ The app requires the following permissions:
 - **Delete**: When loading, choose a workout and select "Delete" with confirmation
 
 ### Viewing Workout History
-- Tap "View History" to see all completed workouts
+- Tap "View History" to see all completed workouts (available even when disconnected)
 - Workouts are sorted by date (newest first)
 - Each entry shows: name, type, date, duration, distance, and average power
 - Tap any workout to view complete details and charts
+- **Delete workouts:**
+  - **Single delete**: Tap the trash icon on any workout
+  - **Batch delete**: Long-press a workout to enter selection mode
+    - Checkboxes appear for multi-select
+    - Tap workouts to select/deselect
+    - Tap "Delete Selected" in the toolbar
+    - Confirm deletion of all selected workouts
 
 ## Architecture
 
@@ -221,25 +244,30 @@ The app uses the standard Android Bluetooth LE APIs:
 ### Data Parsing
 
 Power, speed, and cadence data are parsed according to the Bluetooth SIG specifications:
-- Cycling Power Measurement characteristic (0x2A63)
-- CSC Measurement characteristic (0x2A5B)
-- Heart Rate Measurement characteristic (0x2A37)
+- Indoor Bike Data characteristic (0x2A63) from FTMS - primary data source
+  - Includes instantaneous speed, cadence, power, and distance
+  - Speed reported in km/h (after Start command and wheel circumference configuration)
+- Cycling Power Measurement characteristic (0x2A63) - alternative source
+- CSC Measurement characteristic (0x2A5B) - alternative source
 
 ### Resistance Control Implementation
 
-The app attempts multiple protocols in sequence to ensure compatibility:
+The app uses the Fitness Machine Service (FTMS) for reliable resistance control:
 
-1. **Wahoo Proprietary**: Uses service UUID `a026ee0b-0a7d-4ab3-97fa-f1500f9feb8b` with command `0x42`
-   - Maps resistance percentage to power (100% = 400W)
+1. **Set Target Resistance Level (opcode 0x04)**: Direct resistance percentage control
+   - Sends resistance value in 0.1% resolution (0-1000 units = 0-100%)
+   - Example: 50% resistance = 500 units
    
-2. **FTMS Target Power**: Uses Fitness Machine Control Point (opcode `0x05`)
-   - Sets target power in watts
-   
-3. **FTMS Resistance Level**: Uses Fitness Machine Control Point (opcode `0x04`)
-   - Sets resistance level directly
-   
-4. **Cycling Power Control Point**: Alternative power control method
-   - Used as fallback for maximum compatibility
+2. **Control Flow**:
+   - Request Control (opcode 0x00) before each resistance change
+   - Wait for write confirmation
+   - Send resistance command
+   - 200ms minimum delay between commands to prevent queue overflow
+
+3. **Speed Activation**:
+   - Set Wheel Circumference (opcode 0x13) to 2100mm (700c wheel)
+   - Send Start/Resume command (opcode 0x07) to activate proper speed reporting
+   - Required for Wahoo Kickr to report accurate speed values
 
 ### Workout Profile Storage
 
@@ -264,9 +292,9 @@ Completed workouts are saved as individual JSON files in the app's internal stor
 - Location: App internal files directory
 - Each file contains:
   - Workout metadata: name, type, start/end timestamps
-  - Statistics: average and maximum values for power, speed, cadence, heart rate
+  - Statistics: average and maximum values for power, speed, cadence
   - Data points: Complete second-by-second recordings including:
-    - timestamp, elapsedSeconds, power, speed, cadence, heartRate, resistance, distance
+    - timestamp, elapsedSeconds, power, speed, cadence, resistance, distance
 
 Example structure:
 ```json
@@ -281,8 +309,6 @@ Example structure:
   "maxSpeed": 38.2,
   "averageCadence": 85,
   "maxCadence": 110,
-  "averageHeartRate": 145,
-  "maxHeartRate": 175,
   "totalDistance": 15.5,
   "dataPoints": [
     {"timestamp": 1735000000000, "elapsedSeconds": 0, "power": 150.0, ...},
