@@ -64,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setupWorkoutButton: Button
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
+    private lateinit var pauseResumeWorkoutButton: Button
     private lateinit var viewHistoryButton: Button
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
@@ -72,6 +73,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cadenceTextView: TextView
     private lateinit var speedTextView: TextView
     private lateinit var heartRateTextView: TextView
+    private lateinit var distanceTextView: TextView
     private lateinit var powerChart: LineChart
     private lateinit var speedChart: LineChart
     private lateinit var workoutStatusCard: MaterialCardView
@@ -95,6 +97,8 @@ class MainActivity : AppCompatActivity() {
     private var workoutTimer: CountDownTimer? = null
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
+    private var workoutPaused = false
+    private var workoutPausedAtSecond = 0
     
     // Workout tracking
     private var workoutStartTime: Long = 0
@@ -198,6 +202,7 @@ class MainActivity : AppCompatActivity() {
         setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
         viewGpxButton = findViewById(R.id.viewGpxButton)
         stopWorkoutButton = findViewById(R.id.stopWorkoutButton)
+        pauseResumeWorkoutButton = findViewById(R.id.pauseResumeWorkoutButton)
         viewHistoryButton = findViewById(R.id.viewHistoryButton)
         connectionStatusTextView = findViewById(R.id.connectionStatusTextView)
         devicesRecyclerView = findViewById(R.id.devicesRecyclerView)
@@ -206,6 +211,7 @@ class MainActivity : AppCompatActivity() {
         cadenceTextView = findViewById(R.id.cadenceTextView)
         speedTextView = findViewById(R.id.speedTextView)
         heartRateTextView = findViewById(R.id.heartRateTextView)
+        distanceTextView = findViewById(R.id.distanceTextView)
         powerChart = findViewById(R.id.powerChart)
         speedChart = findViewById(R.id.speedChart)
         workoutStatusCard = findViewById(R.id.workoutStatusCard)
@@ -539,6 +545,11 @@ class MainActivity : AppCompatActivity() {
                         )
                         scanButton.visibility = View.VISIBLE
                         disconnectButton.visibility = View.GONE
+                        setupWorkoutButton.visibility = View.GONE
+                        viewGpxButton.visibility = View.GONE
+                        viewHistoryButton.visibility = View.GONE
+                        stopWorkoutButton.visibility = View.GONE
+                        pauseResumeWorkoutButton.visibility = View.GONE
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.GONE
                     }
@@ -587,6 +598,12 @@ class MainActivity : AppCompatActivity() {
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
                 heartRateTextView.text = getString(R.string.heart_rate_format, data.heartRate)
+                
+                // Update distance display if workout is active
+                if (activeWorkout != null) {
+                    val distanceKm = cumulativeDistance / 1000.0
+                    distanceTextView.text = getString(R.string.distance_format, distanceKm)
+                }
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
@@ -703,6 +720,29 @@ class MainActivity : AppCompatActivity() {
         stopWorkoutButton.setOnClickListener {
             stopWorkout()
         }
+        
+        pauseResumeWorkoutButton.setOnClickListener {
+            togglePauseResumeWorkout()
+        }
+    }
+    
+    private fun togglePauseResumeWorkout() {
+        if (activeWorkout == null) return
+        
+        workoutPaused = !workoutPaused
+        
+        if (workoutPaused) {
+            // Paused
+            workoutPausedAtSecond = workoutElapsedSeconds
+            pauseResumeWorkoutButton.text = getString(R.string.resume_workout)
+            Toast.makeText(this, "Workout Paused", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Workout paused at ${workoutElapsedSeconds}s")
+        } else {
+            // Resumed
+            pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
+            Toast.makeText(this, "Workout Resumed", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Workout resumed at ${workoutElapsedSeconds}s")
+        }
     }
     
     private fun startWorkout() {
@@ -712,6 +752,9 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Workout Started! Scroll to see resistance chart.", Toast.LENGTH_LONG).show()
         
         workoutElapsedSeconds = 0
+        workoutPaused = false
+        workoutPausedAtSecond = 0
+        cumulativeDistance = 0.0
         workoutStartTime = System.currentTimeMillis()
         workoutDataPoints.clear()
         
@@ -720,8 +763,12 @@ class MainActivity : AppCompatActivity() {
         workoutStatusCard.visibility = View.VISIBLE
         workoutChartCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
+        viewGpxButton.visibility = View.GONE
         viewHistoryButton.visibility = View.GONE
+        disconnectButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
+        pauseResumeWorkoutButton.visibility = View.VISIBLE
+        pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
         
         Log.d(TAG, "Workout status card visible: ${workoutStatusCard.visibility == View.VISIBLE}")
         Log.d(TAG, "Workout chart card visible: ${workoutChartCard.visibility == View.VISIBLE}")
@@ -753,6 +800,11 @@ class MainActivity : AppCompatActivity() {
             private var lastResistance = -1
             
             override fun onTick(millisUntilFinished: Long) {
+                // Skip processing if workout is paused
+                if (workoutPaused) {
+                    return
+                }
+                
                 workoutElapsedSeconds++
                 Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed, remaining: ${workout.getRemainingTime(workoutElapsedSeconds)}s")
                 
@@ -901,6 +953,8 @@ class MainActivity : AppCompatActivity() {
         val wasActive = activeWorkout != null
         activeWorkout = null
         workoutElapsedSeconds = 0
+        workoutPaused = false
+        workoutPausedAtSecond = 0
         cumulativeDistance = 0.0
         workoutStartTime = 0
         
@@ -910,7 +964,9 @@ class MainActivity : AppCompatActivity() {
         setupWorkoutButton.visibility = View.VISIBLE
         viewGpxButton.visibility = View.VISIBLE
         viewHistoryButton.visibility = View.VISIBLE
+        disconnectButton.visibility = View.VISIBLE
         stopWorkoutButton.visibility = View.GONE
+        pauseResumeWorkoutButton.visibility = View.GONE
         
         // Reset resistance to 0
         bluetoothService.setResistance(0)
@@ -1003,13 +1059,18 @@ class MainActivity : AppCompatActivity() {
         workoutElapsedSeconds = 0
         workoutStartTime = System.currentTimeMillis()
         workoutDataPoints.clear()
+        workoutPaused = false
+        workoutPausedAtSecond = 0
         
         // Show workout UI
         workoutStatusCard.visibility = View.VISIBLE
         setupWorkoutButton.visibility = View.GONE
         viewGpxButton.visibility = View.GONE
         viewHistoryButton.visibility = View.GONE
+        disconnectButton.visibility = View.GONE
         stopWorkoutButton.visibility = View.VISIBLE
+        pauseResumeWorkoutButton.visibility = View.VISIBLE
+        pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
         viewMapButton.visibility = View.GONE // Hide the external map button
         
         // Try to show and setup map
@@ -1033,6 +1094,9 @@ class MainActivity : AppCompatActivity() {
         // Start workout timer
         workoutTimer = object : CountDownTimer(estimatedDurationSeconds.toLong() * 1000, 1000) {
             override fun onTick(millisUntilFinished: Long) {
+                if (workoutPaused) {
+                    return
+                }
                 workoutElapsedSeconds++
                 updateGpxWorkout()
             }

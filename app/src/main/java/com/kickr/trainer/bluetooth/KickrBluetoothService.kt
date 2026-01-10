@@ -58,6 +58,8 @@ class KickrBluetoothService(private val context: Context) {
     // For callback chaining FTMS control commands
     private var pendingPowerCommand: ByteArray? = null
     private var ftmsControlPointCharacteristic: BluetoothGattCharacteristic? = null
+    private var lastResistanceCommandTime = 0L
+    private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     
     // Cycling Power Measurement parsing
     private var lastCrankRevolutions: Int? = null
@@ -266,31 +268,37 @@ class KickrBluetoothService(private val context: Context) {
             return
         }
         
+        // Prevent rapid successive calls - they can queue up and cause issues
+        val now = System.currentTimeMillis()
+        if (now - lastResistanceCommandTime < RESISTANCE_COMMAND_DELAY_MS) {
+            Log.d(TAG, "Skipping resistance command - too soon after last command (${now - lastResistanceCommandTime}ms)")
+            return
+        }
+        lastResistanceCommandTime = now
+        
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS RESISTANCE COMMAND")
         Log.d(TAG, "Input: $resistancePercent%")
         
-        // Convert resistance percentage to target power using exponential curve
-        // This provides better feel across the entire range
-        // Formula: power = 20W + e^(resistancePercent/25) * 8W
-        // 0% = 28W, 25% = ~42W, 50% = ~73W, 75% = ~124W, 100% = ~227W
-        val targetPower = (20 + Math.exp(resistancePercent / 25.0) * 8).toInt().toShort()
+        // Convert resistance percentage to resistance level (0.1% resolution)
+        // FTMS uses SINT16 with 0.1% resolution
+        // 0% = 0, 50% = 500, 100% = 1000
+        val resistanceLevel = (resistancePercent * 10).toShort()
         
-        Log.d(TAG, "Formula: 20 + e^($resistancePercent/25) * 8")
-        Log.d(TAG, "Output: ${targetPower}W")
+        Log.d(TAG, "Resistance Level: ${resistanceLevel} (0.1% units)")
         
         // Use FTMS (Fitness Machine Service) exclusively
         gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
             service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
-                // Prepare the power command to send after control is granted
+                // Prepare the resistance level command to send after control is granted
                 pendingPowerCommand = byteArrayOf(
-                    0x05.toByte(), // Opcode: Set Target Power
-                    (targetPower.toInt() and 0xFF).toByte(),
-                    ((targetPower.toInt() shr 8) and 0xFF).toByte()
+                    0x04.toByte(), // Opcode: Set Target Resistance Level
+                    (resistanceLevel.toInt() and 0xFF).toByte(),
+                    ((resistanceLevel.toInt() shr 8) and 0xFF).toByte()
                 )
                 
-                Log.d(TAG, "→ FTMS Requesting Control (power command pending)")
-                Log.d(TAG, "  Target power: ${targetPower}W")
+                Log.d(TAG, "→ FTMS Requesting Control (resistance command pending)")
+                Log.d(TAG, "  Target resistance: ${resistancePercent}% (${resistanceLevel} in 0.1% units)")
                 
                 // Request control of the trainer (required before setting power)
                 val requestControlCommand = byteArrayOf(0x00.toByte()) // Opcode 0x00: Request Control
