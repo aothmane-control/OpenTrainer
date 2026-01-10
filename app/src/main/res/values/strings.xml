@@ -59,4 +59,5 @@
     <string name="duration_minutes">Duration (min)</string>
     <string name="workout_must_have_intervals">Please add at least one interval</string>
     <string name="workout_incomplete">Intervals don\'t match total duration</string>
+    <string name="workout_history_title">Workout History</string>
 </resources>

@@ -547,7 +547,7 @@ class MainActivity : AppCompatActivity() {
                         disconnectButton.visibility = View.GONE
                         setupWorkoutButton.visibility = View.GONE
                         viewGpxButton.visibility = View.GONE
-                        viewHistoryButton.visibility = View.GONE
+                        viewHistoryButton.visibility = View.VISIBLE
                         stopWorkoutButton.visibility = View.GONE
                         pauseResumeWorkoutButton.visibility = View.GONE
                         devicesRecyclerView.visibility = View.GONE
