@@ -170,11 +170,15 @@ class WorkoutSummaryActivity : AppCompatActivity() {
             fillAlpha = 50
         }
 
+        // Calculate 110% of max resistance for better visualization
+        val maxResistance = workout.dataPoints.maxOfOrNull { it.resistance }?.toFloat() ?: 100f
+        val yMax = maxResistance * 1.1f
+
         resistanceHistoryChart.data = LineData(dataSet)
         resistanceHistoryChart.xAxis.axisMinimum = 0f
         resistanceHistoryChart.xAxis.axisMaximum = workout.getDurationSeconds().toFloat()
         resistanceHistoryChart.axisLeft.axisMinimum = 0f
-        resistanceHistoryChart.axisLeft.axisMaximum = 100f
+        resistanceHistoryChart.axisLeft.axisMaximum = yMax
         resistanceHistoryChart.invalidate()
     }
 

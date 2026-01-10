@@ -72,7 +72,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var powerTextView: TextView
     private lateinit var cadenceTextView: TextView
     private lateinit var speedTextView: TextView
-    private lateinit var heartRateTextView: TextView
     private lateinit var distanceTextView: TextView
     private lateinit var powerChart: LineChart
     private lateinit var speedChart: LineChart
@@ -210,7 +209,6 @@ class MainActivity : AppCompatActivity() {
         powerTextView = findViewById(R.id.powerTextView)
         cadenceTextView = findViewById(R.id.cadenceTextView)
         speedTextView = findViewById(R.id.speedTextView)
-        heartRateTextView = findViewById(R.id.heartRateTextView)
         distanceTextView = findViewById(R.id.distanceTextView)
         powerChart = findViewById(R.id.powerChart)
         speedChart = findViewById(R.id.speedChart)
@@ -291,21 +289,29 @@ class MainActivity : AppCompatActivity() {
             setPinchZoom(false)
             legend.isEnabled = true
             legend.textColor = Color.DKGRAY
+            legend.textSize = 12f
+            setExtraOffsets(10f, 10f, 10f, 10f)
             axisRight.isEnabled = false
             axisLeft.apply {
-                textColor = Color.DKGRAY
+                isEnabled = true
+                textColor = Color.BLACK
+                textSize = 12f
                 setDrawGridLines(true)
                 gridColor = Color.LTGRAY
                 axisMinimum = 0f
                 axisMaximum = 100f
                 granularity = 10f
+                setDrawLabels(true)
+                setLabelCount(6, false)
             }
             xAxis.apply {
-                textColor = Color.DKGRAY
+                textColor = Color.BLACK
+                textSize = 10f
                 setDrawGridLines(true)
                 gridColor = Color.LTGRAY
                 position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 granularity = 30f
+                setDrawLabels(true)
                 valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
                         val mins = (value / 60).toInt()
@@ -597,7 +603,6 @@ class MainActivity : AppCompatActivity() {
                 powerTextView.text = getString(R.string.power_format, data.power)
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
-                heartRateTextView.text = getString(R.string.heart_rate_format, data.heartRate)
                 
                 // Update distance display if workout is active
                 if (activeWorkout != null) {
@@ -886,7 +891,12 @@ class MainActivity : AppCompatActivity() {
         
         workoutProfileChart.data = LineData(dataSet)
         workoutProfileChart.xAxis.axisMaximum = workout.totalDuration.toFloat()
-        workoutProfileChart.axisLeft.axisMaximum = yMax
+        workoutProfileChart.axisLeft.apply {
+            axisMinimum = 0f
+            axisMaximum = yMax
+            setLabelCount(6, false)
+            granularity = yMax / 10f
+        }
         workoutProfileChart.axisRight.axisMaximum = yMax
         workoutProfileChart.notifyDataSetChanged()
         workoutProfileChart.invalidate()
@@ -934,7 +944,12 @@ class MainActivity : AppCompatActivity() {
         }
         
         workoutProfileChart.data = LineData(profileDataSet, progressDataSet)
-        workoutProfileChart.axisLeft.axisMaximum = yMax
+        workoutProfileChart.axisLeft.apply {
+            axisMinimum = 0f
+            axisMaximum = yMax
+            setLabelCount(6, false)
+            granularity = yMax / 10f
+        }
         workoutProfileChart.axisRight.axisMaximum = yMax
         workoutProfileChart.notifyDataSetChanged()
         workoutProfileChart.invalidate()
