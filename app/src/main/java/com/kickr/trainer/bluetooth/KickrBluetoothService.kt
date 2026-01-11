@@ -52,6 +52,7 @@ class KickrBluetoothService(private val context: Context) {
     
     // For callback chaining FTMS control commands
     private var pendingPowerCommand: ByteArray? = null
+    private var pendingSimulationCommand: ByteArray? = null
     private var ftmsControlPointCharacteristic: BluetoothGattCharacteristic? = null
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
@@ -206,16 +207,26 @@ class KickrBluetoothService(private val context: Context) {
                 }
             })")
             
-            // If this was the Request Control command and we have a pending power command, send it now
+            // If this was the Request Control command and we have a pending command, send it now
             if (status == BluetoothGatt.GATT_SUCCESS && 
                 characteristic.uuid == GattAttributes.FITNESS_MACHINE_CONTROL_POINT &&
-                pendingPowerCommand != null) {
-                Log.d(TAG, "→ Control granted, sending pending power command")
-                characteristic.value = pendingPowerCommand
-                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                val success = gatt.writeCharacteristic(characteristic)
-                Log.d(TAG, "  Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
-                pendingPowerCommand = null  // Clear pending command
+                (pendingPowerCommand != null || pendingSimulationCommand != null)) {
+                
+                if (pendingPowerCommand != null) {
+                    Log.d(TAG, "→ Control granted, sending pending power command")
+                    characteristic.value = pendingPowerCommand
+                    characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    val success = gatt.writeCharacteristic(characteristic)
+                    Log.d(TAG, "  Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
+                    pendingPowerCommand = null  // Clear pending command
+                } else if (pendingSimulationCommand != null) {
+                    Log.d(TAG, "→ Control granted, sending pending simulation command")
+                    characteristic.value = pendingSimulationCommand
+                    characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    val success = gatt.writeCharacteristic(characteristic)
+                    Log.d(TAG, "  Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
+                    pendingSimulationCommand = null  // Clear pending command
+                }
             }
         }
     }
@@ -408,6 +419,86 @@ class KickrBluetoothService(private val context: Context) {
         if (!success) {
             Log.e(TAG, "Failed to set wheel circumference")
         }
+    }
+    
+    fun setSimulationParameters(
+        windSpeedMps: Double = 0.0,
+        gradePercent: Double = 0.0,
+        crr: Double = 0.004,  // Coefficient of rolling resistance (default: 0.004)
+        cw: Double = 0.51     // Wind resistance coefficient kg/m (default: 0.51)
+    ) {
+        val gatt = bluetoothGatt
+        if (gatt == null) {
+            Log.w(TAG, "Cannot set simulation parameters: GATT not connected")
+            return
+        }
+        
+        // Prevent rapid successive calls
+        val now = System.currentTimeMillis()
+        if (now - lastResistanceCommandTime < RESISTANCE_COMMAND_DELAY_MS) {
+            Log.d(TAG, "Skipping simulation command - too soon after last command (${now - lastResistanceCommandTime}ms)")
+            return
+        }
+        lastResistanceCommandTime = now
+        
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "FTMS SIMULATION PARAMETERS")
+        Log.d(TAG, "Grade: %.2f%%, Wind: %.2f m/s, Crr: %.4f, Cw: %.2f".format(gradePercent, windSpeedMps, crr, cw))
+        
+        // Convert parameters to FTMS format
+        // Wind Speed: SINT16, 0.001 m/s resolution
+        val windSpeed = (windSpeedMps * 1000).toInt().coerceIn(-32768, 32767).toShort()
+        
+        // Grade: SINT16, 0.01% resolution, range: -100.00% to +100.00%
+        val grade = (gradePercent * 100).toInt().coerceIn(-10000, 10000).toShort()
+        
+        // Crr: UINT8, 0.0001 resolution
+        val crrByte = (crr * 10000).toInt().coerceIn(0, 255).toByte()
+        
+        // Cw: UINT8, 0.01 kg/m resolution
+        val cwByte = (cw * 100).toInt().coerceIn(0, 255).toByte()
+        
+        Log.d(TAG, "  Wind Speed: $windSpeed (0.001 m/s units)")
+        Log.d(TAG, "  Grade: $grade (0.01%% units)")
+        Log.d(TAG, "  Crr: $crrByte")
+        Log.d(TAG, "  Cw: $cwByte")
+        
+        // Use FTMS (Fitness Machine Service)
+        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
+                // Prepare the simulation parameters command (opcode 0x11)
+                pendingSimulationCommand = byteArrayOf(
+                    0x11.toByte(), // Opcode: Set Indoor Bike Simulation Parameters
+                    (windSpeed.toInt() and 0xFF).toByte(),
+                    ((windSpeed.toInt() shr 8) and 0xFF).toByte(),
+                    (grade.toInt() and 0xFF).toByte(),
+                    ((grade.toInt() shr 8) and 0xFF).toByte(),
+                    crrByte,
+                    cwByte
+                )
+                
+                Log.d(TAG, "→ FTMS Requesting Control (simulation command pending)")
+                
+                // Request control of the trainer
+                val requestControlCommand = byteArrayOf(0x00.toByte()) // Opcode 0x00: Request Control
+                characteristic.value = requestControlCommand
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                
+                Log.d(TAG, "  Command bytes: ${requestControlCommand.joinToString(" ") { "0x%02X".format(it) }}")
+                val controlSuccess = gatt.writeCharacteristic(characteristic)
+                Log.d(TAG, "  Write initiated: ${if (controlSuccess) "✓ SUCCESS" else "✗ FAILED"}")
+                Log.d(TAG, "========================================")
+                
+                if (!controlSuccess) {
+                    Log.e(TAG, "Failed to initiate FTMS Request Control write")
+                    pendingSimulationCommand = null  // Clear pending command on failure
+                }
+                // The simulation command will be sent automatically in onCharacteristicWrite callback
+                return
+            } ?: Log.e(TAG, "FTMS Control Point characteristic not found")
+        } ?: Log.e(TAG, "Fitness Machine Service not found")
+        
+        Log.w(TAG, "FTMS simulation control not available")
     }
     
     private fun sendStartCommand() {

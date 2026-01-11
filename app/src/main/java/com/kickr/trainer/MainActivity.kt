@@ -1481,8 +1481,7 @@ class MainActivity : AppCompatActivity() {
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
         
-        // Get resistance based on current position on track
-        val targetResistance = workout.getResistanceAtDistance(cumulativeDistance)
+        // Get gradient at current position on track
         val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
         
         // Update map position
@@ -1495,15 +1494,21 @@ class MainActivity : AppCompatActivity() {
             gpxTrack.totalDistance / 1000
         )
         workoutResistanceTextView.text = String.format(
-            "Resistance: %d%% (%.1f%% grade)", 
-            targetResistance,
+            "Grade: %.1f%%", 
             gradient
         )
         
-        // Send resistance command to trainer
-        bluetoothService.setResistance(targetResistance)
-        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h, resistance=%d%%, gradient=%.1f%%".format(
-            cumulativeDistance, validSpeed, targetResistance, gradient
+        // Send simulation parameters to trainer with actual gradient
+        // This gives more realistic feel than resistance mapping
+        bluetoothService.setSimulationParameters(
+            windSpeedMps = 0.0,      // No wind simulation
+            gradePercent = gradient,  // Use actual track gradient
+            crr = 0.004,             // Standard rolling resistance
+            cw = 0.51                // Standard wind resistance
+        )
+        
+        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h, gradient=%.1f%%".format(
+            cumulativeDistance, validSpeed, gradient
         ))
         
         // Check if workout complete
