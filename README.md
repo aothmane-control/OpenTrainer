@@ -31,16 +31,19 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
   - Power history (last 20 seconds)
   - Speed history (last 20 seconds)
 - 🏋️ **Workout Programming:**
+  - **Two workout modes: Resistance-based and Power-based (ERG mode)**
   - Create custom resistance profiles with intervals
+  - Create custom power profiles with target wattage
   - Set total workout duration
-  - Define multiple intervals with specific duration and resistance percentage
+  - Define multiple intervals with specific duration and resistance percentage or target power
   - Edit individual intervals without deleting others
   - Scrollable interval list for managing many intervals
-  - Visual resistance profile chart showing the entire workout plan
+  - Visual workout profile chart showing the entire workout plan (resistance % or power W)
   - Real-time progress indicator during workout execution
-  - Automatic resistance control throughout the workout
+  - Automatic resistance or power control throughout the workout
   - **Pause and resume workouts** at any time
   - **Distance tracking** displayed in real-time during workout
+  - **Sound notifications**: Musical beeps on interval changes and workout completion
 - 💾 **Workout Management:**
   - Save named workout profiles for reuse
   - Load previously saved workouts
@@ -81,21 +84,34 @@ Download the latest APK from the [Releases](https://github.com/aothmane-control/
 ## Bluetooth Services Supported
 
 The app implements standard Bluetooth SIG services:
-- **Fitness Machine Service (0x1826)** - Primary service for resistance control and data
+- **Fitness Machine Service (0x1826)** - Primary service for resistance and power control
   - Indoor Bike Data characteristic for power, speed, cadence
-  - Fitness Machine Control Point for resistance commands
+  - Fitness Machine Control Point for resistance and power commands
+  - Set Target Resistance Level (opcode 0x04) for resistance-based workouts (0-100%)
+  - Set Target Power (opcode 0x05) for power-based workouts (1-1000W)
   - Start/Resume command (opcode 0x07) for activating speed reporting
   - Set Wheel Circumference (opcode 0x13) for accurate speed calculation
 - **Cycling Power Service (0x1818)** - For power measurements (optional, not used with FTMS)
 - **Cycling Speed and Cadence Service (0x1816)** - For speed and cadence (optional, not used with FTMS)
 
-### Resistance Control
+### Workout Control Modes
 
-The app uses the Fitness Machine Service (FTMS) for resistance control:
+The app supports two workout control modes via Fitness Machine Service (FTMS):
+
+#### Resistance Mode
 - **Set Target Resistance Level (opcode 0x04)** - Direct resistance percentage control (0-100%)
 - Sends resistance commands with 200ms minimum delay between commands to prevent BLE queue overflow
 - Automatically requests control before each resistance change
+- User controls effort by adjusting cadence; power output varies
 - Compatible with Wahoo Kickr and other FTMS-compliant trainers
+
+#### Power Mode (ERG Mode)
+- **Set Target Power (opcode 0x05)** - Direct power target in watts (1-1000W)
+- Sends power commands with 200ms minimum delay between commands
+- Automatically requests control before each power change
+- Trainer automatically adjusts resistance to maintain target power regardless of cadence
+- Ideal for structured training with specific power zones
+- Compatible with trainers supporting FTMS power control
 
 ## Installation
 
@@ -116,38 +132,44 @@ The app requires the following permissions:
 - `BLUETOOTH` - Legacy Bluetooth permission (Android 11 and below)
 - `BLUETOOTH_ADMIN` - Legacy Bluetooth admin permission (Android 11 and below)
 - `INTERNET` - Only used for downloading map tiles when viewing GPX routes on the map (optional feature)
-- `ACCESS_NETWORK_STATE` - To check network availability for map tiles
-
-**Privacy Note:** All permissions are used solely for local device functionality. No data is transmitted to external servers except for map tiles from OpenStreetMap (only when explicitly viewing maps).
-
-## Usage
-
-### Basic Training
-1. Launch the app
-2. Tap "Scan for Devices"
-3. Grant Bluetooth permissions if prompted
-4. Select your Kickr Core trainer from the list
-5. View real-time training data and charts
-
 ### Workout Programming
 1. After connecting to the trainer, tap "Setup Workout"
 2. Enter a name for your workout profile
-3. Set the total workout duration in minutes
-4. Add intervals by specifying:
+3. **Choose workout mode:**
+   - **Resistance Mode**: Control resistance percentage (0-100%)
+   - **Power Mode**: Control target power in watts (1-1000W)
+4. Set the total workout duration in minutes
+5. Add intervals by specifying:
    - Duration (in minutes)
-   - Target resistance (percentage)
-5. The app validates that intervals add up to the total duration
-6. Save your workout profile for future use
-7. Tap "Start Workout" to begin
+   - Target resistance (percentage) OR target power (watts)
+6. The app validates that intervals add up to the total duration
+7. Save your workout profile for future use
+8. Tap "Start Workout" to begin
 
 ### During Workout
 - The workout status card shows:
   - Elapsed time and remaining time
   - Current interval number
-  - Target resistance for the current interval
+  - Target resistance (%) or target power (W) for the current interval
   - **Current distance traveled**
-- The resistance profile chart displays:
-  - Blue filled area: Complete workout resistance plan
+- The workout profile chart displays:
+  - Blue filled area: Complete workout profile (resistance or power)
+  - Red dashed line: Current position in the workout
+  - Dynamic Y-axis: Scaled to 110% of maximum value for better visibility
+  - Axis labels showing resistance (%) or power (W) based on workout type
+- Resistance or power is automatically adjusted at each interval transition
+- **Sound notifications:**
+  - Two-tone beep (G5→C6) when starting a new interval
+  - Four-tone ascending chord (C4-E4-G4-C5) when workout completes
+- Distance is tracked automatically for all workouts
+- All data (power, speed, cadence, resistance, distance) is recorded every second
+- **Pause/Resume**: Tap "Pause Workout" to pause, then "Resume Workout" to continue
+  - Timer stops during pause
+  - Distance tracking pauses
+  - Data recording pauses
+- **Stop Early**: Tap "Stop Workout" to end the workout prematurely
+  - Workout is saved to history
+  - Summary screen is displayedworkout resistance plan
   - Red dashed line: Current position in the workout
   - Dynamic Y-axis: Scaled to 110% of maximum resistance for better visibility
   - Axis labels showing resistance values (0-100%+)
@@ -165,11 +187,14 @@ The app requires the following permissions:
 ### After Workout
 - Workout summary screen displays automatically with:
   - Duration, distance, and average power statistics
-  - Complete power evolution chart
-  - Complete speed evolution chart
-  - Complete resistance profile chart
-- Share your workout results
-- Access workout history anytime from the "View History" button
+### Managing Workout Profiles
+- **Save**: After configuring a workout, it's automatically saved with the given name
+- **Load**: Tap "Load Workout" to see all saved profiles, then select one to load or delete
+  - Saved workouts retain their type (Resistance or Power mode)
+  - Loading a workout automatically switches to the correct mode
+- **Edit**: Use the edit button on any interval to modify duration and resistance/power
+  - Edit dialog adapts to workout type (shows "Resistance (0-100%)" or "Power (watts)")
+- **Delete**: When loading, choose a workout and select "Delete" with confirmation
 
 ### Managing Workout Profiles
 - **Save**: After configuring a workout, it's automatically saved with the given name
@@ -241,24 +266,58 @@ The app uses the standard Android Bluetooth LE APIs:
 - `BluetoothGatt` for GATT connection management
 - Standard Bluetooth SIG service UUIDs
 
-### Data Parsing
-
-Power, speed, and cadence data are parsed according to the Bluetooth SIG specifications:
-- Indoor Bike Data characteristic (0x2A63) from FTMS - primary data source
-  - Includes instantaneous speed, cadence, power, and distance
-  - Speed reported in km/h (after Start command and wheel circumference configuration)
-- Cycling Power Measurement characteristic (0x2A63) - alternative source
-- CSC Measurement characteristic (0x2A5B) - alternative source
-
 ### Resistance Control Implementation
 
-The app uses the Fitness Machine Service (FTMS) for reliable resistance control:
+The app uses the Fitness Machine Service (FTMS) for reliable workout control with two modes:
 
-1. **Set Target Resistance Level (opcode 0x04)**: Direct resistance percentage control
+#### Resistance Mode (opcode 0x04)
+1. **Set Target Resistance Level**: Direct resistance percentage control
    - Sends resistance value in 0.1% resolution (0-1000 units = 0-100%)
    - Example: 50% resistance = 500 units
    
 2. **Control Flow**:
+   - Request Control (opcode 0x00) before each resistance change
+   - Wait for write confirmation
+   - Send resistance command
+   - 200ms minimum delay between commands to prevent queue overflow
+
+#### Power Mode (opcode 0x05)
+1. **Set Target Power**: Direct power target in watts
+   - Sends power value in 1W resolution as signed 16-bit integer
+   - Range: 1-1000W
+   - Example: 200W = 200 (0x00C8)
+   
+2. **Control Flow**:
+   - Request Control (opcode 0x00) before each power change
+   - Wait for write confirmation
+   - Send power command
+### Workout Profile Storage
+
+Workouts are stored in SharedPreferences as JSON with support for both resistance and power modes:
+```json
+{
+  "Workout Name": {
+    "totalDurationSeconds": 3600,
+    "type": "RESISTANCE",
+    "intervals": [
+      {"duration": 300, "resistance": 50, "power": 0},
+      {"duration": 600, "resistance": 75, "power": 0},
+      {"duration": 300, "resistance": 60, "power": 0}
+    ]
+  },
+  "Power Intervals": {
+    "totalDurationSeconds": 1800,
+    "type": "POWER",
+    "intervals": [
+      {"duration": 300, "resistance": 0, "power": 150},
+      {"duration": 600, "resistance": 0, "power": 200},
+      {"duration": 300, "resistance": 0, "power": 180}
+    ]
+  }
+}
+``` Durations: 150ms, 150ms, 150ms, 450ms (longer final note)
+- Sounds are programmatically generated as WAV files with fade in/out envelopes
+- Uses `AudioAttributes.USAGE_MEDIA` stream (always audible, independent of notification volume)
    - Request Control (opcode 0x00) before each resistance change
    - Wait for write confirmation
    - Send resistance command

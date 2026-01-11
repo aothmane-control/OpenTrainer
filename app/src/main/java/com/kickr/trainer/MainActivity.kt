@@ -38,6 +38,7 @@ import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
+import com.kickr.trainer.model.WorkoutType
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
@@ -140,16 +141,19 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             result.data?.let { data ->
                 val durationSeconds = data.getIntExtra("workout_duration", 0)
+                val workoutTypeStr = data.getStringExtra("workout_type") ?: "RESISTANCE"
+                val workoutType = WorkoutType.valueOf(workoutTypeStr)
                 val durations = data.getIntArrayExtra("workout_interval_durations") ?: IntArray(0)
                 val resistances = data.getIntArrayExtra("workout_interval_resistances") ?: IntArray(0)
+                val powers = data.getIntArrayExtra("workout_interval_powers") ?: IntArray(0)
                 
-                Log.d(TAG, "Received workout: duration=${durationSeconds}s, intervals=${durations.size}")
+                Log.d(TAG, "Received workout: duration=${durationSeconds}s, type=$workoutType, intervals=${durations.size}")
                 
-                if (durations.isNotEmpty() && resistances.isNotEmpty()) {
-                    val intervals = durations.zip(resistances).map { (duration, resistance) ->
-                        com.kickr.trainer.model.WorkoutInterval(duration, resistance)
+                if (durations.isNotEmpty() && (resistances.isNotEmpty() || powers.isNotEmpty())) {
+                    val intervals = durations.indices.map { i ->
+                        WorkoutInterval(durations[i], resistances.getOrElse(i) { 0 }, powers.getOrElse(i) { 0 })
                     }
-                    activeWorkout = Workout(durationSeconds, intervals)
+                    activeWorkout = Workout(durationSeconds, intervals, workoutType)
                     startWorkout()
                 } else {
                     Log.e(TAG, "No intervals received!")
@@ -1060,14 +1064,24 @@ class MainActivity : AppCompatActivity() {
         val firstInterval = workout.intervals.firstOrNull()
         if (firstInterval != null) {
             workoutIntervalTextView.text = getString(R.string.workout_interval_format, 1, workout.intervals.size)
-            workoutResistanceTextView.text = getString(R.string.workout_resistance_format, firstInterval.resistance)
+            
+            // Set UI text based on workout type
+            when (workout.type) {
+                WorkoutType.RESISTANCE -> {
+                    workoutResistanceTextView.text = getString(R.string.workout_resistance_format, firstInterval.resistance)
+                    bluetoothService.setResistance(firstInterval.resistance)
+                    Log.d(TAG, "Set initial resistance: ${firstInterval.resistance}%")
+                }
+                WorkoutType.POWER -> {
+                    workoutResistanceTextView.text = getString(R.string.workout_power_format, firstInterval.power)
+                    bluetoothService.setPower(firstInterval.power)
+                    Log.d(TAG, "Set initial power: ${firstInterval.power}W")
+                }
+            }
+            
             val mins = workout.totalDuration / 60
             val secs = workout.totalDuration % 60
             workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
-            
-            // Set initial resistance
-            bluetoothService.setResistance(firstInterval.resistance)
-            Log.d(TAG, "Set initial resistance: ${firstInterval.resistance}%")
         }
         
         // Start timer that ticks every second
@@ -1108,10 +1122,22 @@ class MainActivity : AppCompatActivity() {
                         intervalIndex,
                         workout.intervals.size
                     )
-                    workoutResistanceTextView.text = getString(
-                        R.string.workout_resistance_format,
-                        currentInterval.resistance
-                    )
+                    
+                    // Update UI text based on workout type
+                    when (workout.type) {
+                        WorkoutType.RESISTANCE -> {
+                            workoutResistanceTextView.text = getString(
+                                R.string.workout_resistance_format,
+                                currentInterval.resistance
+                            )
+                        }
+                        WorkoutType.POWER -> {
+                            workoutResistanceTextView.text = getString(
+                                R.string.workout_power_format,
+                                currentInterval.power
+                            )
+                        }
+                    }
                     
                     val remaining = workout.getRemainingTime(workoutElapsedSeconds)
                     val mins = remaining / 60
@@ -1121,11 +1147,22 @@ class MainActivity : AppCompatActivity() {
                     // Update workout profile chart with progress line
                     updateWorkoutProfileProgress(workout, workoutElapsedSeconds)
                     
-                    // Send resistance command when interval changes
-                    if (currentInterval.resistance != lastResistance) {
-                        bluetoothService.setResistance(currentInterval.resistance)
-                        lastResistance = currentInterval.resistance
-                        Log.d(TAG, "Resistance changed to: ${currentInterval.resistance}% at ${workoutElapsedSeconds}s")
+                    // Send command when interval value changes
+                    when (workout.type) {
+                        WorkoutType.RESISTANCE -> {
+                            if (currentInterval.resistance != lastResistance) {
+                                bluetoothService.setResistance(currentInterval.resistance)
+                                lastResistance = currentInterval.resistance
+                                Log.d(TAG, "Resistance changed to: ${currentInterval.resistance}% at ${workoutElapsedSeconds}s")
+                            }
+                        }
+                        WorkoutType.POWER -> {
+                            if (currentInterval.power != lastResistance) {
+                                bluetoothService.setPower(currentInterval.power)
+                                lastResistance = currentInterval.power
+                                Log.d(TAG, "Power changed to: ${currentInterval.power}W at ${workoutElapsedSeconds}s")
+                            }
+                        }
                     }
                 }
             }
@@ -1145,14 +1182,23 @@ class MainActivity : AppCompatActivity() {
         val entries = mutableListOf<Entry>()
         var accumulatedTime = 0f
         
-        // Create the resistance profile with step function
+        // Create the profile with step function based on workout type
         for (interval in workout.intervals) {
-            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+            val value = when (workout.type) {
+                WorkoutType.RESISTANCE -> interval.resistance.toFloat()
+                WorkoutType.POWER -> interval.power.toFloat()
+            }
+            entries.add(Entry(accumulatedTime, value))
             accumulatedTime += interval.duration
-            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+            entries.add(Entry(accumulatedTime, value))
         }
         
-        val dataSet = LineDataSet(entries, "Target Resistance (%)").apply {
+        val label = when (workout.type) {
+            WorkoutType.RESISTANCE -> "Target Resistance (%)"
+            WorkoutType.POWER -> "Target Power (W)"
+        }
+        
+        val dataSet = LineDataSet(entries, label).apply {
             color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
             lineWidth = 3f
             setDrawCircles(false)
@@ -1163,9 +1209,12 @@ class MainActivity : AppCompatActivity() {
             fillAlpha = 50
         }
         
-        // Calculate max resistance and set Y-axis to 110% of max
-        val maxResistance = workout.intervals.maxOfOrNull { it.resistance } ?: 100
-        val yMax = maxResistance * 1.1f
+        // Calculate max value and set Y-axis to 110% of max
+        val maxValue = when (workout.type) {
+            WorkoutType.RESISTANCE -> workout.intervals.maxOfOrNull { it.resistance } ?: 100
+            WorkoutType.POWER -> workout.intervals.maxOfOrNull { it.power } ?: 200
+        }
+        val yMax = maxValue * 1.1f
         
         workoutProfileChart.data = LineData(dataSet)
         workoutProfileChart.xAxis.axisMaximum = workout.totalDuration.toFloat()
@@ -1184,14 +1233,23 @@ class MainActivity : AppCompatActivity() {
         val entries = mutableListOf<Entry>()
         var accumulatedTime = 0f
         
-        // Rebuild the resistance profile
+        // Rebuild the profile based on workout type
         for (interval in workout.intervals) {
-            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+            val value = when (workout.type) {
+                WorkoutType.RESISTANCE -> interval.resistance.toFloat()
+                WorkoutType.POWER -> interval.power.toFloat()
+            }
+            entries.add(Entry(accumulatedTime, value))
             accumulatedTime += interval.duration
-            entries.add(Entry(accumulatedTime, interval.resistance.toFloat()))
+            entries.add(Entry(accumulatedTime, value))
         }
         
-        val profileDataSet = LineDataSet(entries, "Target Resistance (%)").apply {
+        val label = when (workout.type) {
+            WorkoutType.RESISTANCE -> "Target Resistance (%)"
+            WorkoutType.POWER -> "Target Power (W)"
+        }
+        
+        val profileDataSet = LineDataSet(entries, label).apply {
             color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
             lineWidth = 3f
             setDrawCircles(false)
@@ -1202,9 +1260,12 @@ class MainActivity : AppCompatActivity() {
             fillAlpha = 50
         }
         
-        // Calculate max resistance and set Y-axis to 110% of max
-        val maxResistance = workout.intervals.maxOfOrNull { it.resistance } ?: 100
-        val yMax = maxResistance * 1.1f
+        // Calculate max value and set Y-axis to 110% of max
+        val maxValue = when (workout.type) {
+            WorkoutType.RESISTANCE -> workout.intervals.maxOfOrNull { it.resistance } ?: 100
+            WorkoutType.POWER -> workout.intervals.maxOfOrNull { it.power } ?: 200
+        }
+        val yMax = maxValue * 1.1f
         
         // Add progress indicator line
         val progressEntries = listOf(

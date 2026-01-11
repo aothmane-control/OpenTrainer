@@ -14,10 +14,12 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.kickr.trainer.R
 import com.kickr.trainer.model.WorkoutInterval
+import com.kickr.trainer.model.WorkoutType
 
 class IntervalAdapter(
     private val onDeleteClick: (Int) -> Unit,
-    private val onEditClick: (Int, WorkoutInterval) -> Unit
+    private val onEditClick: (Int, WorkoutInterval) -> Unit,
+    private var workoutType: WorkoutType = WorkoutType.RESISTANCE
 ) : RecyclerView.Adapter<IntervalAdapter.IntervalViewHolder>() {
 
     private var intervals: List<WorkoutInterval> = emptyList()
@@ -31,7 +33,12 @@ class IntervalAdapter(
         fun bind(interval: WorkoutInterval, position: Int) {
             intervalNumberTextView.text = "Interval ${position + 1}"
             val durationMinutes = interval.duration / 60.0
-            intervalDetailsTextView.text = "%.1f min @ ${interval.resistance}%%".format(durationMinutes)
+            
+            val valueText = when (workoutType) {
+                WorkoutType.RESISTANCE -> "${interval.resistance}%%"
+                WorkoutType.POWER -> "${interval.power}W"
+            }
+            intervalDetailsTextView.text = "%.1f min @ %s".format(durationMinutes, valueText)
             
             editButton.setOnClickListener {
                 onEditClick(position, interval)
@@ -58,6 +65,12 @@ class IntervalAdapter(
     @SuppressLint("NotifyDataSetChanged")
     fun updateIntervals(newIntervals: List<WorkoutInterval>) {
         intervals = newIntervals
+        notifyDataSetChanged()
+    }
+    
+    @SuppressLint("NotifyDataSetChanged")
+    fun updateWorkoutType(newType: WorkoutType) {
+        workoutType = newType
         notifyDataSetChanged()
     }
 }

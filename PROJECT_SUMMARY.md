@@ -2,7 +2,7 @@
 
 ## 🔓 Open Source | 🔒 Privacy First | 📶 Offline-Ready
 
-A complete Android application for connecting to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy, displaying real-time training metrics, executing programmable resistance workouts with GPX-based elevation profiles, interactive map visualization, and comprehensive workout analytics with historical tracking.
+A complete Android application for connecting to Wahoo Kickr Core and compatible smart trainers via Bluetooth Low Energy, displaying real-time training metrics, executing programmable resistance and power-based (ERG mode) workouts with GPX-based elevation profiles, interactive map visualization, and comprehensive workout analytics with historical tracking.
 
 ## ✨ Core Principles
 
@@ -13,7 +13,7 @@ A complete Android application for connecting to Wahoo Kickr Core and compatible
 - **Zero Tracking** - No analytics, no telemetry, no external connections
 
 ## Overview
-A complete Android application for connecting to Wahoo Kickr Core trainers via Bluetooth Low Energy, displaying real-time training metrics, and executing programmable resistance workouts with interval training.
+A complete Android application for connecting to Wahoo Kickr Core trainers via Bluetooth Low Energy, displaying real-time training metrics, and executing programmable resistance and power-based (ERG mode) workouts with interval training and sound notifications.
 
 ## Complete File Structure
 
@@ -107,7 +107,7 @@ kickr_android/
   - Cycling Power Service (0x1818)
   - Cycling Speed and Cadence Service (0x1816)
   - Heart Rate Service (0x180D)
-  - Fitness Machine Service (0x1826) - for resistance control
+  - Fitness Machine Service (0x1826) - for resistance and power control
 
 ### 2. Data Parsing & Calculation
 Implements Bluetooth SIG specifications for:
@@ -121,33 +121,43 @@ Implements Bluetooth SIG specifications for:
 - **MPAndroidChart Integration:** Real-time charts with smooth updates
 - **Power Chart:** Last 20 seconds of power data with rolling window
 - **Speed Chart:** Last 20 seconds of speed data
-- **Workout Profile Chart:** Complete resistance profile visualization
-  - Blue filled area showing target resistance over time
+- **Workout Profile Chart:** Complete workout profile visualization (resistance % or power W)
+  - Blue filled area showing target resistance or power over time
   - Red dashed line indicating current workout position
-  - Dynamic Y-axis scaling (110% of max resistance for better visibility)
+  - Dynamic Y-axis scaling (110% of max value for better visibility)
+  - Chart labels adapt to workout type
 
 ### 4. Workout Programming & Execution
-- **Custom Workouts:** Create multi-interval resistance profiles
+- **Custom Workouts:** Create multi-interval resistance or power profiles
+- **Workout Modes:**
+  - **Resistance Mode:** Control resistance percentage (0-100%)
+  - **Power Mode (ERG):** Control target power in watts (1-1000W)
 - **Interval Configuration:**
   - Set total workout duration in minutes
-  - Add intervals with duration (minutes) and target resistance (%)
-  - Edit existing intervals with validation
+  - Add intervals with duration (minutes) and target resistance (%) or power (W)
+  - Edit existing intervals with validation (dialog adapts to workout type)
   - Scrollable interval list (200dp height with nested scrolling)
+  - Interval display shows appropriate units (% or W)
   - Validation ensures intervals sum to total duration
   - Input fields disabled when workout is complete
 - **Workout Execution:**
   - CountDownTimer for precise interval transitions
-  - Automatic resistance control at each interval
-  - Real-time display of current interval, elapsed time, target resistance
-  - Visual progress indicator on resistance profile chart
+  - Automatic resistance or power control at each interval
+  - Real-time display of current interval, elapsed time, target resistance/power
+  - Visual progress indicator on workout profile chart
+  - **Sound Notifications:**
+    - Two-tone beep (G5→C6) on interval changes
+    - Four-tone ascending chord (C4-E4-G4-C5) on workout completion
+    - Programmatically generated WAV files with audio envelopes
   - Stop workout functionality
   - **Automatic Data Recording:** Records every second during workout:
     - timestamp, elapsed time, power, speed, cadence, heart rate, resistance, distance
 - **Workout Profile Management:**
-  - Save workouts with custom names
+  - Save workouts with custom names and type (Resistance/Power)
   - Load from multiple saved profiles (selection dialog)
+  - Loading automatically switches to correct workout mode
   - Delete unwanted profiles (with confirmation)
-  - Storage via SharedPreferences + JSON
+  - Storage via SharedPreferences + JSON with workout type
 
 ### 5. Workout History & Analytics
 - **Automatic Workout Saving:** Every workout is automatically saved when stopped
@@ -170,12 +180,17 @@ Implements Bluetooth SIG specifications for:
 - **Elevation Profile:** Visual display of route elevation
 - **GPX Workouts:** Start workouts from GPX tracks with elevation-based resistance
 
-### 7. Resistance Control
+### 7. Workout Control (Resistance & Power)
 Multiple protocols for maximum compatibility:
-1. **Wahoo Proprietary Protocol:** Uses custom service UUID with 0x42 command
-2. **FTMS Target Power:** Uses Fitness Machine Control Point (opcode 0x05)
-3. **FTMS Resistance Level:** Uses Fitness Machine Control Point (opcode 0x04)
-4. **Cycling Power Control Point:** Alternative power control method
+1. **FTMS Resistance Mode:** Uses Fitness Machine Control Point (opcode 0x04)
+   - Direct resistance percentage control (0-100%)
+   - 200ms throttling between commands
+2. **FTMS Power Mode (ERG):** Uses Fitness Machine Control Point (opcode 0x05)
+   - Direct power target in watts (1-1000W)
+   - Trainer automatically adjusts resistance to maintain target power
+   - 200ms throttling between commands
+3. **Wahoo Proprietary Protocol:** Uses custom service UUID with 0x42 command (legacy)
+4. **Cycling Power Control Point:** Alternative power control method (legacy)
 
 ### 8. User Interface & Usability
 - **Material Design 3:** Modern, clean interface with proper theming

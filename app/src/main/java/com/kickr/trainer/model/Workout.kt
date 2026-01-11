@@ -5,19 +5,30 @@
 
 package com.kickr.trainer.model
 
+enum class WorkoutType {
+    RESISTANCE,  // Resistance-based (0-100%)
+    POWER        // Power-based (watts)
+}
+
 data class WorkoutInterval(
     val duration: Int,        // Duration in seconds
-    val resistance: Int       // Resistance percentage (0-100)
+    val resistance: Int,      // Resistance percentage (0-100) - used when type is RESISTANCE
+    val power: Int = 0        // Target power in watts - used when type is POWER
 )
 
 data class Workout(
     val totalDuration: Int,   // Total workout duration in seconds
     val intervals: List<WorkoutInterval>,
+    val type: WorkoutType = WorkoutType.RESISTANCE,  // Workout type
     val gpxTrack: GpxTrack? = null  // Optional GPX track for elevation-based workouts
 ) {
     fun isValid(): Boolean {
         val sumDuration = intervals.sumOf { it.duration }
-        return sumDuration == totalDuration && intervals.all { it.resistance in 0..100 }
+        val valueCheck = when (type) {
+            WorkoutType.RESISTANCE -> intervals.all { it.resistance in 0..100 }
+            WorkoutType.POWER -> intervals.all { it.power > 0 && it.power <= 1000 }
+        }
+        return sumDuration == totalDuration && valueCheck
     }
     
     fun getCurrentInterval(elapsedSeconds: Int): WorkoutInterval? {

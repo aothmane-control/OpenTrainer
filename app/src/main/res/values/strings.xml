@@ -60,4 +60,12 @@
     <string name="workout_must_have_intervals">Please add at least one interval</string>
     <string name="workout_incomplete">Intervals don\'t match total duration</string>
     <string name="workout_history_title">Workout History</string>
+    <string name="workout_type">Workout Type</string>
+    <string name="resistance_mode">Resistance</string>
+    <string name="power_mode">Power</string>
+    <string name="target_value">Target Value</string>
+    <string name="resistance_percent_hint">Resistance (0-100%)</string>
+    <string name="power_watts_hint">Power (watts)</string>
+    <string name="power_format_display">%d W</string>
+    <string name="workout_power_format">Target: %1$d W</string>
 </resources>

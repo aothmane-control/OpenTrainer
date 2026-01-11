@@ -18,13 +18,14 @@
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/editIntervalValueLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:hint="Resistance (%)">
 
         <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editIntervalResistanceEditText"
+            android:id="@+id/editIntervalValueEditText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="number" />

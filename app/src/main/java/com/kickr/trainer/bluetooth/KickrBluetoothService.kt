@@ -45,11 +45,6 @@ class KickrBluetoothService(private val context: Context) {
     private val _trainerData = MutableStateFlow(TrainerData())
     val trainerData: StateFlow<TrainerData> = _trainerData.asStateFlow()
     
-    // Low-pass filter for smoothing speed and power (like Python alpha = 0.99)
-    private var filteredSpeed: Float = 0f
-    private var filteredPower: Int = 0
-    private val smoothingAlpha = 0.85f  // Smoothing factor (0-1, higher = more smoothing)
-    
     private var currentPower = 0
     private var currentCadence = 0
     private var currentSpeed = 0f
@@ -259,6 +254,63 @@ class KickrBluetoothService(private val context: Context) {
         bluetoothGatt?.close()
         bluetoothGatt = null
         _connectionState.value = ConnectionState.Disconnected
+    }
+    
+    fun setPower(powerWatts: Int) {
+        val gatt = bluetoothGatt
+        if (gatt == null) {
+            Log.w(TAG, "Cannot set power: GATT not connected")
+            return
+        }
+        
+        // Prevent rapid successive calls - they can queue up and cause issues
+        val now = System.currentTimeMillis()
+        if (now - lastResistanceCommandTime < RESISTANCE_COMMAND_DELAY_MS) {
+            Log.d(TAG, "Skipping power command - too soon after last command (${now - lastResistanceCommandTime}ms)")
+            return
+        }
+        lastResistanceCommandTime = now
+        
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "FTMS POWER COMMAND")
+        Log.d(TAG, "Input: ${powerWatts}W")
+        
+        // Convert power to FTMS format (SINT16, 1 watt resolution)
+        val powerValue = powerWatts.toShort()
+        
+        Log.d(TAG, "Power Value: ${powerValue} watts")
+        
+        // Use FTMS (Fitness Machine Service) exclusively
+        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
+                // Prepare the target power command to send after control is granted
+                pendingPowerCommand = byteArrayOf(
+                    0x05.toByte(), // Opcode: Set Target Power
+                    (powerValue.toInt() and 0xFF).toByte(),
+                    ((powerValue.toInt() shr 8) and 0xFF).toByte()
+                )
+                
+                Log.d(TAG, "→ FTMS Requesting Control (power command pending)")
+                Log.d(TAG, "  Target power: ${powerWatts}W")
+                
+                // Request control of the trainer (required before setting power)
+                val requestControlCommand = byteArrayOf(0x00.toByte()) // Opcode 0x00: Request Control
+                characteristic.value = requestControlCommand
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                
+                Log.d(TAG, "  Command bytes: ${requestControlCommand.joinToString(" ") { "0x%02X".format(it) }}")
+                val controlSuccess = gatt.writeCharacteristic(characteristic)
+                Log.d(TAG, "  Write initiated: ${if (controlSuccess) "✓ SUCCESS" else "✗ FAILED"}")
+                Log.d(TAG, "========================================")
+                
+                if (!controlSuccess) {
+                    Log.e(TAG, "Failed to initiate FTMS Request Control write")
+                    pendingPowerCommand = null  // Clear pending command on failure
+                }
+                // The power command will be sent automatically in onCharacteristicWrite callback
+                return
+            } ?: Log.e(TAG, "FTMS Control Point characteristic not found")
+        } ?: Log.e(TAG, "Fitness Machine Service not found")
     }
     
     fun setResistance(resistancePercent: Int) {
@@ -727,17 +779,9 @@ class KickrBluetoothService(private val context: Context) {
     }
     
     private fun updateTrainerData() {
-        // Use FTMS speed directly (now working after sending Start command)
-        val finalSpeed = currentSpeed
-        
-        // Apply low-pass filter only for power smoothing
-        if (currentPower > 1 || filteredPower < 1) {
-            filteredPower = (smoothingAlpha * filteredPower + (1 - smoothingAlpha) * currentPower).toInt()
-        }
-        
         _trainerData.value = TrainerData(
-            power = filteredPower,
-            speed = finalSpeed,
+            power = currentPower,
+            speed = currentSpeed,
             cadence = currentCadence,
             heartRate = currentHeartRate,
             timestamp = System.currentTimeMillis()

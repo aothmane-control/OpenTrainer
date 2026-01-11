@@ -5,6 +5,43 @@ All notable changes to OpenTrainer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2] - 2026-01-11
+
+### Added - Power-Based Workouts (ERG Mode)
+- **Workout Type Selection:** Choose between Resistance mode (0-100%) or Power mode (1-1000W) when creating workouts
+- **FTMS Power Control:** Implemented Set Target Power (opcode 0x05) for direct wattage control
+- **ERG Mode Support:** Trainer automatically maintains target power by adjusting resistance based on cadence
+- **Power Profile Chart:** Workout profile chart adapts to show power (W) for power workouts
+- **Dynamic UI:** Input hints, validation, and display automatically switch between resistance and power modes
+- **Interval Display:** Interval list shows appropriate units (% or W) based on workout type
+- **Save/Load Power Workouts:** Workout storage updated to preserve workout type and both resistance/power values
+
+### Added - Sound Notifications
+- **Interval Change Sound:** Musical two-tone beep (G5→C6, 80ms each) when starting new intervals
+- **Workout Complete Sound:** Four-tone ascending major chord (C4-E4-G4-C5) with longer final note (450ms)
+- **Programmatic Sound Generation:** WAV files generated on-the-fly with proper audio envelopes (10% fade-in, 20% fade-out)
+- **Media Stream Audio:** Uses USAGE_MEDIA to ensure sounds are always audible regardless of notification volume
+- **SoundPool Implementation:** Efficient sound playback with low latency
+
+### Changed
+- **Workout Model:** Added `WorkoutType` enum (RESISTANCE, POWER) and `power` field to `WorkoutInterval`
+- **Workout Validation:** Updated to validate either resistance (0-100%) or power (1-1000W) based on type
+- **Chart Functions:** `buildWorkoutProfileChart()` and `updateWorkoutProfileProgress()` now respect workout type
+- **Interval Editing:** Edit dialog adapts to workout type with appropriate hints and validation
+- **IntervalAdapter:** Displays correct value (% or W) based on workout type, updates when type changes
+- **Version:** Updated to 2.2 (versionCode=4, versionName="2.2")
+- **APK Naming:** Changed to OpenTrainer-2.2.apk
+
+### Fixed
+- **Workout Save/Load:** Fixed power workouts not saving/loading correctly - now stores workout type and power values
+- **Interval Display:** Fixed power workouts showing "0%" in interval list - now shows power in watts
+- **Chart Labels:** Fixed workout profile chart showing "Target Resistance (%)" for power workouts
+- **Interval Editing:** Fixed edit dialog only supporting resistance - now adapts to workout type
+
+### Removed
+- **Low-Pass Filter:** Removed power smoothing filter (alpha=0.85) for more responsive power display
+- **Filtered Power Variables:** Removed `filteredPower`, `filteredSpeed`, and `smoothingAlpha` variables
+
 ## [2.1] - 2026-01-06
 
 ### Added - Workout Analytics System
