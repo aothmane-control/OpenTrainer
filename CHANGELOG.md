@@ -5,6 +5,27 @@ All notable changes to OpenTrainer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3] - 2026-01-11
+
+### Added - GPX Gradient Simulation
+- **FTMS Simulation Parameters:** Implemented Set Indoor Bike Simulation Parameters (opcode 0x11)
+- **Realistic Gradient Control:** GPX workouts now use actual gradient values for trainer control
+- **Physics-based Resistance:** Trainer automatically adjusts resistance based on speed and grade
+- **Simulation Parameters:** Support for wind speed, rolling resistance (Crr), and wind resistance (Cw) coefficients
+
+### Changed
+- **GPX Workout Display:** UI now shows "Grade: X.X%" instead of mapped resistance percentage
+- **Trainer Control:** GPX mode uses simulation parameters instead of resistance mapping for more realistic feel
+- **Better Climbing/Descending:** Natural resistance changes based on actual elevation profile
+- **Version:** Updated to 2.3 (versionCode=5, versionName="2.3")
+- **APK Naming:** Changed to OpenTrainer-2.3.apk
+
+### Technical
+- Added `setSimulationParameters()` function in KickrBluetoothService with grade, wind, Crr, Cw parameters
+- Added `pendingSimulationCommand` queue for FTMS simulation control
+- Updated callback handling to support simulation command chaining
+- FTMS opcode 0x11 implementation with proper parameter encoding (grade: SINT16 0.01%, wind: SINT16 0.001 m/s)
+
 ## [2.2] - 2026-01-11
 
 ### Added - Power-Based Workouts (ERG Mode)

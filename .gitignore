@@ -19,3 +19,5 @@ gradlew
 gradlew.bat
 gradle/wrapper/gradle-wrapper.jar
 *.mp4
+keystore.properties
+*.jks
