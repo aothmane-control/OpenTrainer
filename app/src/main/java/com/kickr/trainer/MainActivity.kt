@@ -10,6 +10,8 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioAttributes
+import android.media.SoundPool
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -98,6 +100,9 @@ class MainActivity : AppCompatActivity() {
     private var cumulativeDistance = 0.0 // For GPX workouts
     private var workoutPaused = false
     private var workoutPausedAtSecond = 0
+    private var soundPool: SoundPool? = null
+    private var beepSoundId: Int = 0
+    private var completeSoundId: Int = 0
     
     // Workout tracking
     private var workoutStartTime: Long = 0
@@ -188,6 +193,38 @@ class MainActivity : AppCompatActivity() {
 
         bluetoothService = KickrBluetoothService(this)
         workoutStorageManager = WorkoutStorageManager(this)
+        
+        // Initialize sound effects for workout notifications
+        try {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            soundPool = SoundPool.Builder()
+                .setMaxStreams(2)
+                .setAudioAttributes(audioAttributes)
+                .build()
+            
+            // Create temporary raw directory if needed
+            val rawDir = File(cacheDir, "raw")
+            rawDir.mkdirs()
+            
+            // Generate two-tone "ding" for interval changes
+            val beepFile = File(rawDir, "beep.wav")
+            generateTwoToneSound(beepFile, 784.0, 1047.0, 80, 80) // G5 to C6
+            beepSoundId = soundPool?.load(beepFile.absolutePath, 1) ?: 0
+            
+            // Generate four-tone ascending major chord for completion (1 second total)
+            val completeFile = File(rawDir, "complete.wav")
+            generateFourToneSound(completeFile, 
+                261.63, 329.63, 392.0, 523.25,  // C4-E4-G4-C5
+                150, 150, 150, 450) // First 3 tones 150ms, last tone 450ms (3x longer) = 900ms total
+            completeSoundId = soundPool?.load(completeFile.absolutePath, 1) ?: 0
+            
+            Log.d(TAG, "Sound effects initialized: beep=$beepSoundId, complete=$completeSoundId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize sound effects: ${e.message}")
+        }
         
         initViews()
         setupRecyclerView()
@@ -731,6 +768,239 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun generateBeepSound(file: File, frequency: Double, durationMs: Int) {
+        try {
+            val sampleRate = 44100
+            val numSamples = (durationMs * sampleRate) / 1000
+            val samples = ByteArray(numSamples * 2) // 16-bit PCM
+            
+            // Envelope parameters for smooth fade in/out
+            val attackSamples = numSamples / 10  // 10% fade in
+            val releaseSamples = numSamples / 5  // 20% fade out
+            
+            // Generate sine wave with envelope
+            for (i in 0 until numSamples) {
+                // Calculate envelope (amplitude)
+                val envelope = when {
+                    i < attackSamples -> i.toDouble() / attackSamples  // Fade in
+                    i > numSamples - releaseSamples -> (numSamples - i).toDouble() / releaseSamples  // Fade out
+                    else -> 1.0  // Sustain
+                }
+                
+                // Generate sine wave sample with envelope
+                val sineWave = Math.sin(2.0 * Math.PI * i.toDouble() / (sampleRate.toDouble() / frequency))
+                val sample = (sineWave * envelope * 32767.0 * 0.7).toInt().toShort()  // 0.7 = volume
+                
+                samples[i * 2] = (sample.toInt() and 0xFF).toByte()
+                samples[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+            }
+            
+            writeWavFile(file, samples, 44100)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate beep sound: ${e.message}")
+        }
+    }
+    
+    private fun generateTwoToneSound(file: File, freq1: Double, freq2: Double, duration1Ms: Int, duration2Ms: Int) {
+        try {
+            val sampleRate = 44100
+            val numSamples1 = (duration1Ms * sampleRate) / 1000
+            val numSamples2 = (duration2Ms * sampleRate) / 1000
+            val totalSamples = numSamples1 + numSamples2
+            val samples = ByteArray(totalSamples * 2)
+            
+            // Generate first tone
+            for (i in 0 until numSamples1) {
+                val progress = i.toDouble() / numSamples1
+                val envelope = if (progress < 0.1) progress / 0.1 else if (progress > 0.7) (1.0 - progress) / 0.3 else 1.0
+                val sineWave = Math.sin(2.0 * Math.PI * i.toDouble() / (sampleRate.toDouble() / freq1))
+                val sample = (sineWave * envelope * 32767.0 * 0.6).toInt().toShort()
+                samples[i * 2] = (sample.toInt() and 0xFF).toByte()
+                samples[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+            }
+            
+            // Generate second tone
+            for (i in 0 until numSamples2) {
+                val progress = i.toDouble() / numSamples2
+                val envelope = if (progress < 0.1) progress / 0.1 else if (progress > 0.7) (1.0 - progress) / 0.3 else 1.0
+                val sineWave = Math.sin(2.0 * Math.PI * i.toDouble() / (sampleRate.toDouble() / freq2))
+                val sample = (sineWave * envelope * 32767.0 * 0.6).toInt().toShort()
+                val idx = (numSamples1 + i) * 2
+                samples[idx] = (sample.toInt() and 0xFF).toByte()
+                samples[idx + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+            }
+            
+            writeWavFile(file, samples, sampleRate)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate two-tone sound: ${e.message}")
+        }
+    }
+    
+    private fun generateThreeToneSound(file: File, freq1: Double, freq2: Double, freq3: Double, 
+                                       duration1Ms: Int, duration2Ms: Int, duration3Ms: Int) {
+        try {
+            val sampleRate = 44100
+            val numSamples1 = (duration1Ms * sampleRate) / 1000
+            val numSamples2 = (duration2Ms * sampleRate) / 1000
+            val numSamples3 = (duration3Ms * sampleRate) / 1000
+            val totalSamples = numSamples1 + numSamples2 + numSamples3
+            val samples = ByteArray(totalSamples * 2)
+            
+            val frequencies = arrayOf(freq1, freq2, freq3)
+            val durations = arrayOf(numSamples1, numSamples2, numSamples3)
+            var offset = 0
+            
+            for (toneIdx in 0..2) {
+                val numSamples = durations[toneIdx]
+                val frequency = frequencies[toneIdx]
+                
+                for (i in 0 until numSamples) {
+                    val progress = i.toDouble() / numSamples
+                    val envelope = if (progress < 0.1) progress / 0.1 else if (progress > 0.8) (1.0 - progress) / 0.2 else 1.0
+                    val sineWave = Math.sin(2.0 * Math.PI * i.toDouble() / (sampleRate.toDouble() / frequency))
+                    val sample = (sineWave * envelope * 32767.0 * 0.65).toInt().toShort()
+                    val idx = (offset + i) * 2
+                    samples[idx] = (sample.toInt() and 0xFF).toByte()
+                    samples[idx + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+                }
+                offset += numSamples
+            }
+            
+            writeWavFile(file, samples, sampleRate)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate three-tone sound: ${e.message}")
+        }
+    }
+    
+    private fun generateFourToneSound(file: File, freq1: Double, freq2: Double, freq3: Double, freq4: Double,
+                                      duration1Ms: Int, duration2Ms: Int, duration3Ms: Int, duration4Ms: Int) {
+        try {
+            val sampleRate = 44100
+            val numSamples1 = (duration1Ms * sampleRate) / 1000
+            val numSamples2 = (duration2Ms * sampleRate) / 1000
+            val numSamples3 = (duration3Ms * sampleRate) / 1000
+            val numSamples4 = (duration4Ms * sampleRate) / 1000
+            val totalSamples = numSamples1 + numSamples2 + numSamples3 + numSamples4
+            val samples = ByteArray(totalSamples * 2)
+            
+            val frequencies = arrayOf(freq1, freq2, freq3, freq4)
+            val durations = arrayOf(numSamples1, numSamples2, numSamples3, numSamples4)
+            var offset = 0
+            
+            for (toneIdx in 0..3) {
+                val numSamples = durations[toneIdx]
+                val frequency = frequencies[toneIdx]
+                
+                for (i in 0 until numSamples) {
+                    val progress = i.toDouble() / numSamples
+                    val envelope = if (progress < 0.1) progress / 0.1 else if (progress > 0.8) (1.0 - progress) / 0.2 else 1.0
+                    val sineWave = Math.sin(2.0 * Math.PI * i.toDouble() / (sampleRate.toDouble() / frequency))
+                    val sample = (sineWave * envelope * 32767.0 * 0.65).toInt().toShort()
+                    val idx = (offset + i) * 2
+                    samples[idx] = (sample.toInt() and 0xFF).toByte()
+                    samples[idx + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+                }
+                offset += numSamples
+            }
+            
+            writeWavFile(file, samples, sampleRate)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate four-tone sound: ${e.message}")
+        }
+    }
+    
+    private fun generateFiveToneSound(file: File, freq1: Double, freq2: Double, freq3: Double, freq4: Double, freq5: Double,
+                                      duration1Ms: Int, duration2Ms: Int, duration3Ms: Int, duration4Ms: Int, duration5Ms: Int) {
+        try {
+            val sampleRate = 44100
+            val numSamples1 = (duration1Ms * sampleRate) / 1000
+            val numSamples2 = (duration2Ms * sampleRate) / 1000
+            val numSamples3 = (duration3Ms * sampleRate) / 1000
+            val numSamples4 = (duration4Ms * sampleRate) / 1000
+            val numSamples5 = (duration5Ms * sampleRate) / 1000
+            val totalSamples = numSamples1 + numSamples2 + numSamples3 + numSamples4 + numSamples5
+            val samples = ByteArray(totalSamples * 2)
+            
+            val frequencies = arrayOf(freq1, freq2, freq3, freq4, freq5)
+            val durations = arrayOf(numSamples1, numSamples2, numSamples3, numSamples4, numSamples5)
+            var offset = 0
+            
+            for (toneIdx in 0..4) {
+                val numSamples = durations[toneIdx]
+                val frequency = frequencies[toneIdx]
+                
+                for (i in 0 until numSamples) {
+                    val progress = i.toDouble() / numSamples
+                    val envelope = if (progress < 0.1) progress / 0.1 else if (progress > 0.8) (1.0 - progress) / 0.2 else 1.0
+                    val sineWave = Math.sin(2.0 * Math.PI * i.toDouble() / (sampleRate.toDouble() / frequency))
+                    val sample = (sineWave * envelope * 32767.0 * 0.65).toInt().toShort()
+                    val idx = (offset + i) * 2
+                    samples[idx] = (sample.toInt() and 0xFF).toByte()
+                    samples[idx + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+                }
+                offset += numSamples
+            }
+            
+            writeWavFile(file, samples, sampleRate)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate five-tone sound: ${e.message}")
+        }
+    }
+    
+    private fun writeWavFile(file: File, samples: ByteArray, sampleRate: Int) {
+        file.outputStream().use { out ->
+            // WAV header
+            out.write("RIFF".toByteArray())
+            writeInt(out, 36 + samples.size)
+            out.write("WAVE".toByteArray())
+            out.write("fmt ".toByteArray())
+            writeInt(out, 16) // fmt chunk size
+            writeShort(out, 1) // PCM
+            writeShort(out, 1) // mono
+            writeInt(out, sampleRate)
+            writeInt(out, sampleRate * 2) // byte rate
+            writeShort(out, 2) // block align
+            writeShort(out, 16) // bits per sample
+            out.write("data".toByteArray())
+            writeInt(out, samples.size)
+            out.write(samples)
+        }
+    }
+    
+    private fun writeInt(out: java.io.OutputStream, value: Int) {
+        out.write(value and 0xFF)
+        out.write((value shr 8) and 0xFF)
+        out.write((value shr 16) and 0xFF)
+        out.write((value shr 24) and 0xFF)
+    }
+    
+    private fun writeShort(out: java.io.OutputStream, value: Int) {
+        out.write(value and 0xFF)
+        out.write((value shr 8) and 0xFF)
+    }
+    
+    private fun playIntervalBeep() {
+        try {
+            if (beepSoundId != 0) {
+                soundPool?.play(beepSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+                Log.d(TAG, "Playing interval beep")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to play interval beep: ${e.message}")
+        }
+    }
+    
+    private fun playWorkoutCompleteBeep() {
+        try {
+            if (completeSoundId != 0) {
+                soundPool?.play(completeSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+                Log.d(TAG, "Playing workout complete beep")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to play completion beep: ${e.message}")
+        }
+    }
+    
     private fun togglePauseResumeWorkout() {
         if (activeWorkout == null) return
         
@@ -803,6 +1073,7 @@ class MainActivity : AppCompatActivity() {
         // Start timer that ticks every second
         workoutTimer = object : CountDownTimer((workout.totalDuration + 1) * 1000L, 1000) {
             private var lastResistance = -1
+            private var lastIntervalIndex = -1
             
             override fun onTick(millisUntilFinished: Long) {
                 // Skip processing if workout is paused
@@ -824,6 +1095,12 @@ class MainActivity : AppCompatActivity() {
                 val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
                 if (currentInterval != null) {
                     val intervalIndex = workout.intervals.indexOf(currentInterval) + 1
+                    
+                    // Play beep when entering a new interval
+                    if (intervalIndex != lastIntervalIndex && lastIntervalIndex != -1) {
+                        playIntervalBeep()
+                    }
+                    lastIntervalIndex = intervalIndex
                     
                     // Update UI
                     workoutIntervalTextView.text = getString(
@@ -855,6 +1132,7 @@ class MainActivity : AppCompatActivity() {
             
             override fun onFinish() {
                 Log.d(TAG, "Workout finished")
+                playWorkoutCompleteBeep()
                 Toast.makeText(this@MainActivity, R.string.workout_complete, Toast.LENGTH_SHORT).show()
                 stopWorkout()
             }
@@ -1118,6 +1396,7 @@ class MainActivity : AppCompatActivity() {
             
             override fun onFinish() {
                 workoutIntervalTextView.text = getString(R.string.workout_complete)
+                playWorkoutCompleteBeep()
                 Toast.makeText(this@MainActivity, getString(R.string.workout_complete), Toast.LENGTH_LONG).show()
                 stopWorkout()
             }
@@ -1170,6 +1449,7 @@ class MainActivity : AppCompatActivity() {
         if (cumulativeDistance >= gpxTrack.totalDistance) {
             workoutTimer?.cancel()
             workoutIntervalTextView.text = getString(R.string.workout_complete)
+            playWorkoutCompleteBeep()
             Toast.makeText(this, "Route complete!", Toast.LENGTH_LONG).show()
             stopWorkout()
         }
@@ -1237,6 +1517,8 @@ class MainActivity : AppCompatActivity() {
         bluetoothService.stopScan()
         bluetoothService.disconnect()
         mapView.onDetach()
+        soundPool?.release()
+        soundPool = null
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
