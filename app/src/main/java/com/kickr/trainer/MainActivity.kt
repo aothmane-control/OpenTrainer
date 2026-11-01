@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity() {
     private var workoutTicker: Runnable? = null
     private var workoutActiveMillis = 0L // Unpaused time accumulated before the current segment
     private var workoutResumedAt = 0L    // elapsedRealtime() when the current unpaused segment started
+    private var lastSentTarget = -1 // Last resistance (%) or power (W) sent to the trainer; -1 forces a resend
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
     private var workoutPaused = false
@@ -597,15 +598,18 @@ class MainActivity : AppCompatActivity() {
                         connectionStatusTextView.setTextColor(
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
                         )
+                        // A running workout keeps going; keep its controls and cards
+                        // so it can still be paused or stopped (and saved)
+                        val workoutRunning = activeWorkout != null
                         scanButton.visibility = View.VISIBLE
                         disconnectButton.visibility = View.GONE
                         setupWorkoutButton.visibility = View.GONE
                         viewGpxButton.visibility = View.GONE
-                        viewHistoryButton.visibility = View.VISIBLE
-                        stopWorkoutButton.visibility = View.GONE
-                        pauseResumeWorkoutButton.visibility = View.GONE
+                        viewHistoryButton.visibility = if (workoutRunning) View.GONE else View.VISIBLE
+                        stopWorkoutButton.visibility = if (workoutRunning) View.VISIBLE else View.GONE
+                        pauseResumeWorkoutButton.visibility = if (workoutRunning) View.VISIBLE else View.GONE
                         devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = View.GONE
+                        dataScrollView.visibility = if (workoutRunning) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connecting -> {
                         connectionStatusTextView.text = getString(R.string.connecting)
@@ -613,21 +617,31 @@ class MainActivity : AppCompatActivity() {
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
                         )
                         devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = View.GONE
+                        dataScrollView.visibility = if (activeWorkout != null) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connected -> {
                         connectionStatusTextView.text = getString(R.string.connected)
                         connectionStatusTextView.setTextColor(
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
                         )
+                        // After a reconnect during a workout, show the workout controls instead
+                        // of the setup buttons, so a second workout can't be started on top
+                        val workoutRunning = activeWorkout != null
+                        val idleVisibility = if (workoutRunning) View.GONE else View.VISIBLE
+                        val workoutVisibility = if (workoutRunning) View.VISIBLE else View.GONE
                         scanButton.visibility = View.GONE
-                        disconnectButton.visibility = View.VISIBLE
-                        setupWorkoutButton.visibility = View.VISIBLE
-                        viewGpxButton.visibility = View.VISIBLE
-                        viewHistoryButton.visibility = View.VISIBLE
+                        disconnectButton.visibility = idleVisibility
+                        setupWorkoutButton.visibility = idleVisibility
+                        viewGpxButton.visibility = idleVisibility
+                        viewHistoryButton.visibility = idleVisibility
+                        stopWorkoutButton.visibility = workoutVisibility
+                        pauseResumeWorkoutButton.visibility = workoutVisibility
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.VISIBLE
-                        
+
+                        // The trainer lost its target while disconnected; resend it on the next tick
+                        lastSentTarget = -1
+
                         Log.d(TAG, "Connected - Setup Workout button visible: ${setupWorkoutButton.visibility == View.VISIBLE}")
                         
                         startTime = System.currentTimeMillis()
@@ -1134,7 +1148,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         // Start ticker that processes every elapsed (unpaused) second
-        var lastResistance = -1
+        lastSentTarget = -1
         var lastIntervalIndex = -1
         startWorkoutTicker { secondsDelta ->
             if (workoutElapsedSeconds >= workout.totalDuration) {
@@ -1200,16 +1214,16 @@ class MainActivity : AppCompatActivity() {
                 // Send command when interval value changes
                 when (workout.type) {
                     WorkoutType.RESISTANCE -> {
-                        if (currentInterval.resistance != lastResistance) {
+                        if (currentInterval.resistance != lastSentTarget) {
                             bluetoothService.setResistance(currentInterval.resistance)
-                            lastResistance = currentInterval.resistance
+                            lastSentTarget = currentInterval.resistance
                             Log.d(TAG, "Resistance changed to: ${currentInterval.resistance}% at ${workoutElapsedSeconds}s")
                         }
                     }
                     WorkoutType.POWER -> {
-                        if (currentInterval.power != lastResistance) {
+                        if (currentInterval.power != lastSentTarget) {
                             bluetoothService.setPower(currentInterval.power)
-                            lastResistance = currentInterval.power
+                            lastSentTarget = currentInterval.power
                             Log.d(TAG, "Power changed to: ${currentInterval.power}W at ${workoutElapsedSeconds}s")
                         }
                     }
@@ -1356,10 +1370,16 @@ class MainActivity : AppCompatActivity() {
         workoutStatusCard.visibility = View.GONE
         workoutChartCard.visibility = View.GONE
         mapCard.visibility = View.GONE
-        setupWorkoutButton.visibility = View.VISIBLE
-        viewGpxButton.visibility = View.VISIBLE
+        // The workout may have been stopped while the trainer was disconnected
+        val connected = bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected
+        val connectedVisibility = if (connected) View.VISIBLE else View.GONE
+        setupWorkoutButton.visibility = connectedVisibility
+        viewGpxButton.visibility = connectedVisibility
         viewHistoryButton.visibility = View.VISIBLE
-        disconnectButton.visibility = View.VISIBLE
+        disconnectButton.visibility = connectedVisibility
+        if (!connected) {
+            dataScrollView.visibility = View.GONE
+        }
         stopWorkoutButton.visibility = View.GONE
         pauseResumeWorkoutButton.visibility = View.GONE
         
