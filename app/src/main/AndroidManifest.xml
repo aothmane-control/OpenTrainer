@@ -40,8 +40,12 @@
         android:theme="@style/Theme.KickrTrainer"
         android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="31">
+        <!-- MainActivity owns the BLE connection and the running workout, and its
+             onDestroy() stops both. Handle common configuration changes ourselves so
+             rotating the phone or switching dark mode does not end the workout. -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
