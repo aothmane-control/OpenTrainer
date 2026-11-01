@@ -13,6 +13,8 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import com.kickr.trainer.model.KickrDevice
@@ -56,6 +58,8 @@ class KickrBluetoothService(private val context: Context) {
     private var ftmsControlPointCharacteristic: BluetoothGattCharacteristic? = null
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
+    private val commandHandler = Handler(Looper.getMainLooper())
+    private var deferredCommand: Runnable? = null
     
     // Cycling Power Measurement parsing
     private var lastCrankRevolutions: Int? = null
@@ -261,27 +265,49 @@ class KickrBluetoothService(private val context: Context) {
     }
     
     fun disconnect() {
+        deferredCommand?.let { commandHandler.removeCallbacks(it) }
+        deferredCommand = null
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
         _connectionState.value = ConnectionState.Disconnected
     }
-    
+
+    // Prevent rapid successive commands - they can queue up and cause issues.
+    // A command that comes too soon is deferred rather than dropped, and replaces any
+    // command still waiting, so the latest target always reaches the trainer.
+    private fun sendThrottled(label: String, send: () -> Unit) {
+        deferredCommand?.let { commandHandler.removeCallbacks(it) }
+        deferredCommand = null
+
+        val waitMs = RESISTANCE_COMMAND_DELAY_MS - (System.currentTimeMillis() - lastResistanceCommandTime)
+        if (waitMs <= 0) {
+            lastResistanceCommandTime = System.currentTimeMillis()
+            send()
+            return
+        }
+
+        Log.d(TAG, "Deferring $label command by ${waitMs}ms - too soon after last command")
+        val command = Runnable {
+            deferredCommand = null
+            lastResistanceCommandTime = System.currentTimeMillis()
+            send()
+        }
+        deferredCommand = command
+        commandHandler.postDelayed(command, waitMs)
+    }
+
     fun setPower(powerWatts: Int) {
+        sendThrottled("power") { sendPowerCommand(powerWatts) }
+    }
+
+    private fun sendPowerCommand(powerWatts: Int) {
         val gatt = bluetoothGatt
         if (gatt == null) {
             Log.w(TAG, "Cannot set power: GATT not connected")
             return
         }
-        
-        // Prevent rapid successive calls - they can queue up and cause issues
-        val now = System.currentTimeMillis()
-        if (now - lastResistanceCommandTime < RESISTANCE_COMMAND_DELAY_MS) {
-            Log.d(TAG, "Skipping power command - too soon after last command (${now - lastResistanceCommandTime}ms)")
-            return
-        }
-        lastResistanceCommandTime = now
-        
+
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS POWER COMMAND")
         Log.d(TAG, "Input: ${powerWatts}W")
@@ -325,20 +351,16 @@ class KickrBluetoothService(private val context: Context) {
     }
     
     fun setResistance(resistancePercent: Int) {
+        sendThrottled("resistance") { sendResistanceCommand(resistancePercent) }
+    }
+
+    private fun sendResistanceCommand(resistancePercent: Int) {
         val gatt = bluetoothGatt
         if (gatt == null) {
             Log.w(TAG, "Cannot set resistance: GATT not connected")
             return
         }
-        
-        // Prevent rapid successive calls - they can queue up and cause issues
-        val now = System.currentTimeMillis()
-        if (now - lastResistanceCommandTime < RESISTANCE_COMMAND_DELAY_MS) {
-            Log.d(TAG, "Skipping resistance command - too soon after last command (${now - lastResistanceCommandTime}ms)")
-            return
-        }
-        lastResistanceCommandTime = now
-        
+
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS RESISTANCE COMMAND")
         Log.d(TAG, "Input: $resistancePercent%")
@@ -427,20 +449,21 @@ class KickrBluetoothService(private val context: Context) {
         crr: Double = 0.004,  // Coefficient of rolling resistance (default: 0.004)
         cw: Double = 0.51     // Wind resistance coefficient kg/m (default: 0.51)
     ) {
+        sendThrottled("simulation") { sendSimulationCommand(windSpeedMps, gradePercent, crr, cw) }
+    }
+
+    private fun sendSimulationCommand(
+        windSpeedMps: Double,
+        gradePercent: Double,
+        crr: Double,
+        cw: Double
+    ) {
         val gatt = bluetoothGatt
         if (gatt == null) {
             Log.w(TAG, "Cannot set simulation parameters: GATT not connected")
             return
         }
-        
-        // Prevent rapid successive calls
-        val now = System.currentTimeMillis()
-        if (now - lastResistanceCommandTime < RESISTANCE_COMMAND_DELAY_MS) {
-            Log.d(TAG, "Skipping simulation command - too soon after last command (${now - lastResistanceCommandTime}ms)")
-            return
-        }
-        lastResistanceCommandTime = now
-        
+
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS SIMULATION PARAMETERS")
         Log.d(TAG, "Grade: %.2f%%, Wind: %.2f m/s, Crr: %.4f, Cw: %.2f".format(gradePercent, windSpeedMps, crr, cw))
