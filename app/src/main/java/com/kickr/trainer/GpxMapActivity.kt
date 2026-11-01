@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.utils.GpxParser
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -53,6 +54,7 @@ class GpxMapActivity : AppCompatActivity() {
         Configuration.getInstance().userAgentValue = packageName
         
         setContentView(R.layout.activity_gpx_map)
+        applyEdgeToEdgeInsets()
 
         initViews()
         setupMap()

@@ -14,7 +14,9 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Build
 import android.os.Bundle
-import android.os.CountDownTimer
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.Menu
 import android.view.MenuItem
@@ -43,6 +45,7 @@ import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -57,6 +60,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val WORKOUT_TICK_MS = 250L
     }
 
     private lateinit var bluetoothService: KickrBluetoothService
@@ -85,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workoutTimeTextView: TextView
     private lateinit var viewMapButton: Button
     private lateinit var workoutProfileChart: LineChart
+    private lateinit var workoutProfileTitleTextView: TextView
     private lateinit var mapView: MapView
     private lateinit var mapCard: MaterialCardView
     private var currentPositionMarker: Marker? = null
@@ -96,7 +101,11 @@ class MainActivity : AppCompatActivity() {
     private val maxDataPoints = 200 // 20 seconds at ~10Hz
     
     private var activeWorkout: Workout? = null
-    private var workoutTimer: CountDownTimer? = null
+    private val workoutHandler = Handler(Looper.getMainLooper())
+    private var workoutTicker: Runnable? = null
+    private var workoutActiveMillis = 0L // Unpaused time accumulated before the current segment
+    private var workoutResumedAt = 0L    // elapsedRealtime() when the current unpaused segment started
+    private var lastSentTarget = -1 // Last resistance (%) or power (W) sent to the trainer; -1 forces a resend
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
     private var workoutPaused = false
@@ -115,7 +124,8 @@ class MainActivity : AppCompatActivity() {
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
-            startBluetoothScan()
+            // Re-run the checks: Bluetooth may still need to be enabled
+            checkPermissionsAndScan()
         } else {
             Toast.makeText(
                 this,
@@ -190,6 +200,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         setContentView(R.layout.activity_main)
+        applyEdgeToEdgeInsets()
 
         // Setup toolbar
         val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
@@ -260,6 +271,7 @@ class MainActivity : AppCompatActivity() {
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
         viewMapButton = findViewById(R.id.viewMapButton)
         workoutProfileChart = findViewById(R.id.workoutProfileChart)
+        workoutProfileTitleTextView = findViewById(R.id.workoutProfileTitleTextView)
         mapView = findViewById(R.id.mapView)
         mapCard = findViewById(R.id.mapCard)
         
@@ -590,15 +602,18 @@ class MainActivity : AppCompatActivity() {
                         connectionStatusTextView.setTextColor(
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
                         )
+                        // A running workout keeps going; keep its controls and cards
+                        // so it can still be paused or stopped (and saved)
+                        val workoutRunning = activeWorkout != null
                         scanButton.visibility = View.VISIBLE
                         disconnectButton.visibility = View.GONE
                         setupWorkoutButton.visibility = View.GONE
                         viewGpxButton.visibility = View.GONE
-                        viewHistoryButton.visibility = View.VISIBLE
-                        stopWorkoutButton.visibility = View.GONE
-                        pauseResumeWorkoutButton.visibility = View.GONE
+                        viewHistoryButton.visibility = if (workoutRunning) View.GONE else View.VISIBLE
+                        stopWorkoutButton.visibility = if (workoutRunning) View.VISIBLE else View.GONE
+                        pauseResumeWorkoutButton.visibility = if (workoutRunning) View.VISIBLE else View.GONE
                         devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = View.GONE
+                        dataScrollView.visibility = if (workoutRunning) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connecting -> {
                         connectionStatusTextView.text = getString(R.string.connecting)
@@ -606,21 +621,31 @@ class MainActivity : AppCompatActivity() {
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
                         )
                         devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = View.GONE
+                        dataScrollView.visibility = if (activeWorkout != null) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connected -> {
                         connectionStatusTextView.text = getString(R.string.connected)
                         connectionStatusTextView.setTextColor(
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
                         )
+                        // After a reconnect during a workout, show the workout controls instead
+                        // of the setup buttons, so a second workout can't be started on top
+                        val workoutRunning = activeWorkout != null
+                        val idleVisibility = if (workoutRunning) View.GONE else View.VISIBLE
+                        val workoutVisibility = if (workoutRunning) View.VISIBLE else View.GONE
                         scanButton.visibility = View.GONE
-                        disconnectButton.visibility = View.VISIBLE
-                        setupWorkoutButton.visibility = View.VISIBLE
-                        viewGpxButton.visibility = View.VISIBLE
-                        viewHistoryButton.visibility = View.VISIBLE
+                        disconnectButton.visibility = idleVisibility
+                        setupWorkoutButton.visibility = idleVisibility
+                        viewGpxButton.visibility = idleVisibility
+                        viewHistoryButton.visibility = idleVisibility
+                        stopWorkoutButton.visibility = workoutVisibility
+                        pauseResumeWorkoutButton.visibility = workoutVisibility
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = View.VISIBLE
-                        
+
+                        // The trainer lost its target while disconnected; resend it on the next tick
+                        lastSentTarget = -1
+
                         Log.d(TAG, "Connected - Setup Workout button visible: ${setupWorkoutButton.visibility == View.VISIBLE}")
                         
                         startTime = System.currentTimeMillis()
@@ -653,11 +678,8 @@ class MainActivity : AppCompatActivity() {
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
-                
-                // Track workout data if a workout is active
-                if (activeWorkout != null && workoutStartTime > 0) {
-                    recordWorkoutData(data)
-                }
+
+                // Workout data is recorded once per workout second by the workout timer
             }
         }
     }
@@ -704,7 +726,11 @@ class MainActivity : AppCompatActivity() {
         speedChart.invalidate()
     }
     
+    // Called once per (unpaused) workout second, so averages are time-weighted
+    // and independent of how often the trainer sends notifications
     private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData) {
+        if (activeWorkout == null || workoutStartTime == 0L) return
+
         val currentResistance = activeWorkout?.let { workout ->
             if (workout.gpxTrack != null) {
                 workout.getResistanceAtDistance(cumulativeDistance)
@@ -712,7 +738,14 @@ class MainActivity : AppCompatActivity() {
                 workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
             }
         } ?: 0
-        
+        val targetPower = activeWorkout?.let { workout ->
+            if (workout.gpxTrack == null && workout.type == WorkoutType.POWER) {
+                workout.getCurrentInterval(workoutElapsedSeconds)?.power ?: 0
+            } else {
+                0
+            }
+        } ?: 0
+
         val dataPoint = WorkoutDataPoint(
             timestamp = System.currentTimeMillis(),
             elapsedSeconds = workoutElapsedSeconds,
@@ -721,7 +754,8 @@ class MainActivity : AppCompatActivity() {
             cadence = data.cadence,
             heartRate = data.heartRate,
             resistance = currentResistance,
-            distance = cumulativeDistance
+            distance = cumulativeDistance,
+            targetPower = targetPower
         )
         
         workoutDataPoints.add(dataPoint)
@@ -1012,23 +1046,65 @@ class MainActivity : AppCompatActivity() {
         
         if (workoutPaused) {
             // Paused
+            workoutActiveMillis += SystemClock.elapsedRealtime() - workoutResumedAt
             workoutPausedAtSecond = workoutElapsedSeconds
             pauseResumeWorkoutButton.text = getString(R.string.resume_workout)
             Toast.makeText(this, "Workout Paused", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout paused at ${workoutElapsedSeconds}s")
         } else {
             // Resumed
+            workoutResumedAt = SystemClock.elapsedRealtime()
             pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
             Toast.makeText(this, "Workout Resumed", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout resumed at ${workoutElapsedSeconds}s")
         }
     }
-    
+
+    // Elapsed workout time excluding pauses, based on the monotonic clock
+    private fun currentWorkoutElapsedSeconds(): Int {
+        val runningMillis = if (workoutPaused) 0L else SystemClock.elapsedRealtime() - workoutResumedAt
+        return ((workoutActiveMillis + runningMillis) / 1000).toInt()
+    }
+
+    // Calls onSecond once per new elapsed second while the workout is not paused,
+    // passing how many seconds passed since the previous call (0 on the first call)
+    private fun startWorkoutTicker(onSecond: (secondsDelta: Int) -> Unit) {
+        stopWorkoutTicker()
+        workoutActiveMillis = 0L
+        workoutResumedAt = SystemClock.elapsedRealtime()
+        var lastProcessedSecond = -1
+
+        val ticker = object : Runnable {
+            override fun run() {
+                if (!workoutPaused) {
+                    val elapsed = currentWorkoutElapsedSeconds()
+                    if (elapsed != lastProcessedSecond) {
+                        lastProcessedSecond = elapsed
+                        val secondsDelta = elapsed - workoutElapsedSeconds
+                        workoutElapsedSeconds = elapsed
+                        onSecond(secondsDelta)
+                    }
+                }
+                // onSecond may have stopped the workout
+                if (workoutTicker === this) {
+                    workoutHandler.postDelayed(this, WORKOUT_TICK_MS)
+                }
+            }
+        }
+        workoutTicker = ticker
+        workoutHandler.post(ticker)
+    }
+
+    private fun stopWorkoutTicker() {
+        workoutTicker?.let { workoutHandler.removeCallbacks(it) }
+        workoutTicker = null
+    }
+
     private fun startWorkout() {
         val workout = activeWorkout ?: return
         
         Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
-        Toast.makeText(this, "Workout Started! Scroll to see resistance chart.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Workout Started! Scroll to see the workout chart.", Toast.LENGTH_LONG).show()
         
         workoutElapsedSeconds = 0
         workoutPaused = false
@@ -1084,97 +1160,92 @@ class MainActivity : AppCompatActivity() {
             workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
         }
         
-        // Start timer that ticks every second
-        workoutTimer = object : CountDownTimer((workout.totalDuration + 1) * 1000L, 1000) {
-            private var lastResistance = -1
-            private var lastIntervalIndex = -1
-            
-            override fun onTick(millisUntilFinished: Long) {
-                // Skip processing if workout is paused
-                if (workoutPaused) {
-                    return
-                }
-                
-                workoutElapsedSeconds++
-                Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed, remaining: ${workout.getRemainingTime(workoutElapsedSeconds)}s")
-                
-                // Calculate distance for resistance workouts (not GPX)
-                if (workout.gpxTrack == null) {
-                    val currentSpeed = bluetoothService.trainerData.value.speed
-                    val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
-                    val distanceThisSecond = validSpeed / 3.6 // convert km/h to m/s
-                    cumulativeDistance += distanceThisSecond
-                }
-                
-                val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
-                if (currentInterval != null) {
-                    val intervalIndex = workout.intervals.indexOf(currentInterval) + 1
-                    
-                    // Play beep when entering a new interval
-                    if (intervalIndex != lastIntervalIndex && lastIntervalIndex != -1) {
-                        playIntervalBeep()
-                    }
-                    lastIntervalIndex = intervalIndex
-                    
-                    // Update UI
-                    workoutIntervalTextView.text = getString(
-                        R.string.workout_interval_format,
-                        intervalIndex,
-                        workout.intervals.size
-                    )
-                    
-                    // Update UI text based on workout type
-                    when (workout.type) {
-                        WorkoutType.RESISTANCE -> {
-                            workoutResistanceTextView.text = getString(
-                                R.string.workout_resistance_format,
-                                currentInterval.resistance
-                            )
-                        }
-                        WorkoutType.POWER -> {
-                            workoutResistanceTextView.text = getString(
-                                R.string.workout_power_format,
-                                currentInterval.power
-                            )
-                        }
-                    }
-                    
-                    val remaining = workout.getRemainingTime(workoutElapsedSeconds)
-                    val mins = remaining / 60
-                    val secs = remaining % 60
-                    workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
-                    
-                    // Update workout profile chart with progress line
-                    updateWorkoutProfileProgress(workout, workoutElapsedSeconds)
-                    
-                    // Send command when interval value changes
-                    when (workout.type) {
-                        WorkoutType.RESISTANCE -> {
-                            if (currentInterval.resistance != lastResistance) {
-                                bluetoothService.setResistance(currentInterval.resistance)
-                                lastResistance = currentInterval.resistance
-                                Log.d(TAG, "Resistance changed to: ${currentInterval.resistance}% at ${workoutElapsedSeconds}s")
-                            }
-                        }
-                        WorkoutType.POWER -> {
-                            if (currentInterval.power != lastResistance) {
-                                bluetoothService.setPower(currentInterval.power)
-                                lastResistance = currentInterval.power
-                                Log.d(TAG, "Power changed to: ${currentInterval.power}W at ${workoutElapsedSeconds}s")
-                            }
-                        }
-                    }
-                }
-            }
-            
-            override fun onFinish() {
+        // Start ticker that processes every elapsed (unpaused) second
+        lastSentTarget = -1
+        var lastIntervalIndex = -1
+        startWorkoutTicker { secondsDelta ->
+            if (workoutElapsedSeconds >= workout.totalDuration) {
                 Log.d(TAG, "Workout finished")
                 playWorkoutCompleteBeep()
                 Toast.makeText(this@MainActivity, R.string.workout_complete, Toast.LENGTH_SHORT).show()
                 stopWorkout()
+                return@startWorkoutTicker
             }
-        }.start()
-        
+
+            Log.d(TAG, "Workout tick: ${workoutElapsedSeconds}s elapsed, remaining: ${workout.getRemainingTime(workoutElapsedSeconds)}s")
+
+            // Calculate distance for resistance workouts (not GPX)
+            if (workout.gpxTrack == null) {
+                val currentSpeed = bluetoothService.trainerData.value.speed
+                val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
+                val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
+                cumulativeDistance += distancePerSecond * secondsDelta
+            }
+
+            recordWorkoutData(bluetoothService.trainerData.value)
+            
+            val currentIndex = workout.getCurrentIntervalIndex(workoutElapsedSeconds)
+            if (currentIndex >= 0) {
+                val currentInterval = workout.intervals[currentIndex]
+                val intervalIndex = currentIndex + 1
+                
+                // Play beep when entering a new interval
+                if (intervalIndex != lastIntervalIndex && lastIntervalIndex != -1) {
+                    playIntervalBeep()
+                }
+                lastIntervalIndex = intervalIndex
+                
+                // Update UI
+                workoutIntervalTextView.text = getString(
+                    R.string.workout_interval_format,
+                    intervalIndex,
+                    workout.intervals.size
+                )
+                
+                // Update UI text based on workout type
+                when (workout.type) {
+                    WorkoutType.RESISTANCE -> {
+                        workoutResistanceTextView.text = getString(
+                            R.string.workout_resistance_format,
+                            currentInterval.resistance
+                        )
+                    }
+                    WorkoutType.POWER -> {
+                        workoutResistanceTextView.text = getString(
+                            R.string.workout_power_format,
+                            currentInterval.power
+                        )
+                    }
+                }
+                
+                val remaining = workout.getRemainingTime(workoutElapsedSeconds)
+                val mins = remaining / 60
+                val secs = remaining % 60
+                workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
+                
+                // Update workout profile chart with progress line
+                updateWorkoutProfileProgress(workout, workoutElapsedSeconds)
+                
+                // Send command when interval value changes
+                when (workout.type) {
+                    WorkoutType.RESISTANCE -> {
+                        if (currentInterval.resistance != lastSentTarget) {
+                            bluetoothService.setResistance(currentInterval.resistance)
+                            lastSentTarget = currentInterval.resistance
+                            Log.d(TAG, "Resistance changed to: ${currentInterval.resistance}% at ${workoutElapsedSeconds}s")
+                        }
+                    }
+                    WorkoutType.POWER -> {
+                        if (currentInterval.power != lastSentTarget) {
+                            bluetoothService.setPower(currentInterval.power)
+                            lastSentTarget = currentInterval.power
+                            Log.d(TAG, "Power changed to: ${currentInterval.power}W at ${workoutElapsedSeconds}s")
+                        }
+                    }
+                }
+            }
+        }
+
         Log.d(TAG, "Workout timer started")
     }
     
@@ -1197,6 +1268,12 @@ class MainActivity : AppCompatActivity() {
             WorkoutType.RESISTANCE -> "Target Resistance (%)"
             WorkoutType.POWER -> "Target Power (W)"
         }
+        
+        // The card title is shared by both workout types
+        workoutProfileTitleTextView.setText(when (workout.type) {
+            WorkoutType.RESISTANCE -> R.string.resistance_profile
+            WorkoutType.POWER -> R.string.power_profile
+        })
         
         val dataSet = LineDataSet(entries, label).apply {
             color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
@@ -1302,8 +1379,7 @@ class MainActivity : AppCompatActivity() {
             saveWorkoutHistory()
         }
         
-        workoutTimer?.cancel()
-        workoutTimer = null
+        stopWorkoutTicker()
         val wasActive = activeWorkout != null
         activeWorkout = null
         workoutElapsedSeconds = 0
@@ -1315,10 +1391,16 @@ class MainActivity : AppCompatActivity() {
         workoutStatusCard.visibility = View.GONE
         workoutChartCard.visibility = View.GONE
         mapCard.visibility = View.GONE
-        setupWorkoutButton.visibility = View.VISIBLE
-        viewGpxButton.visibility = View.VISIBLE
+        // The workout may have been stopped while the trainer was disconnected
+        val connected = bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected
+        val connectedVisibility = if (connected) View.VISIBLE else View.GONE
+        setupWorkoutButton.visibility = connectedVisibility
+        viewGpxButton.visibility = connectedVisibility
         viewHistoryButton.visibility = View.VISIBLE
-        disconnectButton.visibility = View.VISIBLE
+        disconnectButton.visibility = connectedVisibility
+        if (!connected) {
+            dataScrollView.visibility = View.GONE
+        }
         stopWorkoutButton.visibility = View.GONE
         pauseResumeWorkoutButton.visibility = View.GONE
         
@@ -1351,7 +1433,11 @@ class MainActivity : AppCompatActivity() {
             
             // Determine workout type and name
             val workout = activeWorkout
-            val workoutType = if (workout?.gpxTrack != null) "GPX" else "RESISTANCE"
+            val workoutType = when {
+                workout?.gpxTrack != null -> "GPX"
+                workout?.type == WorkoutType.POWER -> "POWER"
+                else -> "RESISTANCE"
+            }
             val workoutName = if (workout?.gpxTrack != null) {
                 workout.gpxTrack!!.name
             } else {
@@ -1370,7 +1456,8 @@ class MainActivity : AppCompatActivity() {
                 averageSpeed = avgSpeed,
                 maxSpeed = maxSpeed,
                 averageCadence = avgCadence,
-                averageHeartRate = avgHeartRate
+                averageHeartRate = avgHeartRate,
+                activeDurationSeconds = workoutElapsedSeconds
             )
             
             val savedFile = workoutStorageManager.saveWorkoutHistory(history)
@@ -1399,7 +1486,8 @@ class MainActivity : AppCompatActivity() {
         // Store track in holder for map activity
         GpxWorkoutHolder.currentTrack = gpxTrack
         
-        // Estimate workout duration based on track distance and average speed (20 km/h)
+        // Estimate workout duration based on track distance and average speed (20 km/h).
+        // Only informational: the workout ends when the route is complete, not after this time.
         val estimatedDurationSeconds = ((gpxTrack.totalDistance / 1000) / 20.0 * 3600).toInt()
         
         // Create a workout with the GPX track
@@ -1445,26 +1533,13 @@ class MainActivity : AppCompatActivity() {
         
         Toast.makeText(this, "GPX workout started! Resistance based on elevation", Toast.LENGTH_LONG).show()
         
-        // Start workout timer
-        workoutTimer = object : CountDownTimer(estimatedDurationSeconds.toLong() * 1000, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                if (workoutPaused) {
-                    return
-                }
-                workoutElapsedSeconds++
-                updateGpxWorkout()
-            }
-            
-            override fun onFinish() {
-                workoutIntervalTextView.text = getString(R.string.workout_complete)
-                playWorkoutCompleteBeep()
-                Toast.makeText(this@MainActivity, getString(R.string.workout_complete), Toast.LENGTH_LONG).show()
-                stopWorkout()
-            }
-        }.start()
+        // Start workout ticker; the workout ends once the route is complete
+        startWorkoutTicker { secondsDelta ->
+            updateGpxWorkout(secondsDelta)
+        }
     }
-    
-    private fun updateGpxWorkout() {
+
+    private fun updateGpxWorkout(secondsDelta: Int) {
         val workout = activeWorkout ?: return
         val gpxTrack = workout.gpxTrack ?: return
         
@@ -1474,13 +1549,15 @@ class MainActivity : AppCompatActivity() {
         // Validate speed (sanity check - if > 100 km/h, likely bad data)
         val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
         
-        // Calculate distance traveled in last second
-        val distanceThisSecond = validSpeed / 3.6 // convert km/h to m/s
-        cumulativeDistance += distanceThisSecond
+        // Calculate distance traveled since the last update
+        val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
+        cumulativeDistance += distancePerSecond * secondsDelta
         
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
-        
+
+        recordWorkoutData(bluetoothService.trainerData.value)
+
         // Get gradient at current position on track
         val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
         
@@ -1513,7 +1590,7 @@ class MainActivity : AppCompatActivity() {
         
         // Check if workout complete
         if (cumulativeDistance >= gpxTrack.totalDistance) {
-            workoutTimer?.cancel()
+            stopWorkoutTicker()
             workoutIntervalTextView.text = getString(R.string.workout_complete)
             playWorkoutCompleteBeep()
             Toast.makeText(this, "Route complete!", Toast.LENGTH_LONG).show()
@@ -1528,14 +1605,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Check if Bluetooth is enabled
-        if (!bluetoothService.isBluetoothEnabled()) {
-            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-            enableBluetoothLauncher.launch(enableBtIntent)
-            return
-        }
-
-        // Check permissions based on Android version
+        // Check permissions based on Android version. This must happen before
+        // the enable-Bluetooth request, which requires BLUETOOTH_CONNECT on Android 12+.
         val permissionsNeeded = mutableListOf<String>()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1558,9 +1629,17 @@ class MainActivity : AppCompatActivity() {
 
         if (permissionsNeeded.isNotEmpty()) {
             requestBluetoothPermissions.launch(permissionsNeeded.toTypedArray())
-        } else {
-            startBluetoothScan()
+            return
         }
+
+        // Check if Bluetooth is enabled
+        if (!bluetoothService.isBluetoothEnabled()) {
+            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            enableBluetoothLauncher.launch(enableBtIntent)
+            return
+        }
+
+        startBluetoothScan()
     }
 
     private fun startBluetoothScan() {

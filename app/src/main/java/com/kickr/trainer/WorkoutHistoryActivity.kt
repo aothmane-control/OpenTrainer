@@ -18,7 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.kickr.trainer.adapter.WorkoutHistoryAdapter
 import com.kickr.trainer.utils.WorkoutStorageManager
-import java.io.File
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 
 class WorkoutHistoryActivity : AppCompatActivity() {
 
@@ -32,6 +32,7 @@ class WorkoutHistoryActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_workout_history)
+        applyEdgeToEdgeInsets()
 
         storageManager = WorkoutStorageManager(this)
 
@@ -122,10 +123,7 @@ class WorkoutHistoryActivity : AppCompatActivity() {
 
     private fun openWorkoutSummary(workout: com.kickr.trainer.model.WorkoutHistory) {
         // Find the file for this workout
-        val historyDir = File(filesDir, "workout_history")
-        val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
-        val filename = "workout_${sdf.format(java.util.Date(workout.startTime))}.json"
-        val file = File(historyDir, filename)
+        val file = storageManager.getWorkoutFile(workout)
         
         if (file.exists()) {
             val intent = Intent(this, WorkoutSummaryActivity::class.java)

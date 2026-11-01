@@ -32,14 +32,20 @@ data class Workout(
     }
     
     fun getCurrentInterval(elapsedSeconds: Int): WorkoutInterval? {
+        return intervals.getOrNull(getCurrentIntervalIndex(elapsedSeconds))
+    }
+
+    // Position of the current interval, or -1 when the workout is over.
+    // Use this rather than intervals.indexOf(), which returns the first of several identical intervals.
+    fun getCurrentIntervalIndex(elapsedSeconds: Int): Int {
         var accumulatedTime = 0
-        for (interval in intervals) {
+        intervals.forEachIndexed { index, interval ->
             accumulatedTime += interval.duration
             if (elapsedSeconds < accumulatedTime) {
-                return interval
+                return index
             }
         }
-        return null
+        return -1
     }
     
     fun getRemainingTime(elapsedSeconds: Int): Int {

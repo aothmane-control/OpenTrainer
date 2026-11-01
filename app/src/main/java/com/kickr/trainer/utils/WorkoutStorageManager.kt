@@ -23,6 +23,12 @@ class WorkoutStorageManager(private val context: Context) {
         private const val HISTORY_DIR = "workout_history"
     }
     
+    // Locale.US keeps the digits ASCII regardless of the device language
+    private fun fileNameFor(startTime: Long): String {
+        val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+        return "workout_${sdf.format(Date(startTime))}.json"
+    }
+    
     private fun getHistoryDirectory(): File {
         val dir = File(context.filesDir, HISTORY_DIR)
         if (!dir.exists()) {
@@ -45,6 +51,7 @@ class WorkoutStorageManager(private val context: Context) {
                 put("maxSpeed", history.maxSpeed)
                 put("averageCadence", history.averageCadence)
                 put("averageHeartRate", history.averageHeartRate)
+                history.activeDurationSeconds?.let { put("activeDurationSeconds", it) }
                 
                 val dataPointsArray = JSONArray()
                 for (point in history.dataPoints) {
@@ -57,6 +64,7 @@ class WorkoutStorageManager(private val context: Context) {
                         put("heartRate", point.heartRate)
                         put("resistance", point.resistance)
                         put("distance", point.distance)
+                        put("targetPower", point.targetPower)
                     }
                     dataPointsArray.put(pointJson)
                 }
@@ -64,9 +72,7 @@ class WorkoutStorageManager(private val context: Context) {
             }
             
             // Create filename with timestamp
-            val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-            val filename = "workout_${sdf.format(Date(history.startTime))}.json"
-            val file = File(getHistoryDirectory(), filename)
+            val file = File(getHistoryDirectory(), fileNameFor(history.startTime))
             
             file.writeText(json.toString(2))
             Log.d(TAG, "Saved workout history to: ${file.absolutePath}")
@@ -95,7 +101,8 @@ class WorkoutStorageManager(private val context: Context) {
                     cadence = pointJson.getInt("cadence"),
                     heartRate = pointJson.getInt("heartRate"),
                     resistance = pointJson.getInt("resistance"),
-                    distance = pointJson.getDouble("distance")
+                    distance = pointJson.getDouble("distance"),
+                    targetPower = pointJson.optInt("targetPower", 0) // Absent in older files
                 ))
             }
             
@@ -111,7 +118,9 @@ class WorkoutStorageManager(private val context: Context) {
                 averageSpeed = json.getDouble("averageSpeed"),
                 maxSpeed = json.getDouble("maxSpeed").toFloat(),
                 averageCadence = json.getDouble("averageCadence"),
-                averageHeartRate = json.getDouble("averageHeartRate")
+                averageHeartRate = json.getDouble("averageHeartRate"),
+                activeDurationSeconds = if (json.has("activeDurationSeconds")) json.getInt("activeDurationSeconds") else null,
+                file = file
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error loading workout history from ${file.name}", e)
@@ -130,10 +139,14 @@ class WorkoutStorageManager(private val context: Context) {
         return histories.sortedByDescending { it.startTime }
     }
     
+    // The file name depends on the timezone at save time, so prefer the file the
+    // history was actually loaded from over rebuilding its name
+    fun getWorkoutFile(history: WorkoutHistory): File {
+        return history.file ?: File(getHistoryDirectory(), fileNameFor(history.startTime))
+    }
+    
     fun deleteWorkoutHistory(history: WorkoutHistory): Boolean {
-        val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-        val filename = "workout_${sdf.format(Date(history.startTime))}.json"
-        val file = File(getHistoryDirectory(), filename)
+        val file = getWorkoutFile(history)
         
         return if (file.exists()) {
             file.delete()

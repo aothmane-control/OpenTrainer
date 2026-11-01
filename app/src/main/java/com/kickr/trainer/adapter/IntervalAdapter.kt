@@ -35,7 +35,8 @@ class IntervalAdapter(
             val durationMinutes = interval.duration / 60.0
             
             val valueText = when (workoutType) {
-                WorkoutType.RESISTANCE -> "${interval.resistance}%%"
+                // Inserted via %s below, so a single % is literal here
+                WorkoutType.RESISTANCE -> "${interval.resistance}%"
                 WorkoutType.POWER -> "${interval.power}W"
             }
             intervalDetailsTextView.text = "%.1f min @ %s".format(durationMinutes, valueText)
