@@ -18,6 +18,7 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 
 class WorkoutSummaryActivity : AppCompatActivity() {
 
@@ -41,6 +42,7 @@ class WorkoutSummaryActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_workout_summary)
+        applyEdgeToEdgeInsets()
 
         initViews()
         loadWorkoutData()

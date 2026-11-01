@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.kickr.trainer.adapter.WorkoutHistoryAdapter
 import com.kickr.trainer.utils.WorkoutStorageManager
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 
 class WorkoutHistoryActivity : AppCompatActivity() {
 
@@ -31,6 +32,7 @@ class WorkoutHistoryActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_workout_history)
+        applyEdgeToEdgeInsets()
 
         storageManager = WorkoutStorageManager(this)
 
