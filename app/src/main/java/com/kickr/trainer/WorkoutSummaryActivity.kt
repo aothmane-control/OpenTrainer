@@ -155,11 +155,20 @@ class WorkoutSummaryActivity : AppCompatActivity() {
     }
 
     private fun displayResistanceChart(workout: WorkoutHistory) {
-        val entries = workout.dataPoints.map { 
-            Entry(it.elapsedSeconds.toFloat(), it.resistance.toFloat()) 
+        // Power workouts control target power rather than resistance
+        val isPowerWorkout = workout.workoutType == "POWER"
+        if (isPowerWorkout) {
+            findViewById<TextView>(R.id.resistanceChartTitle).text = "Power Profile"
+        }
+        val targetOf: (com.kickr.trainer.model.WorkoutDataPoint) -> Int =
+            if (isPowerWorkout) { point -> point.targetPower } else { point -> point.resistance }
+
+        val entries = workout.dataPoints.map {
+            Entry(it.elapsedSeconds.toFloat(), targetOf(it).toFloat())
         }
 
-        val dataSet = LineDataSet(entries, "Resistance (%)").apply {
+        val label = if (isPowerWorkout) "Target Power (W)" else "Resistance (%)"
+        val dataSet = LineDataSet(entries, label).apply {
             color = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_dark)
             lineWidth = 2f
             setDrawCircles(false)
@@ -170,9 +179,9 @@ class WorkoutSummaryActivity : AppCompatActivity() {
             fillAlpha = 50
         }
 
-        // Calculate 110% of max resistance for better visualization
-        val maxResistance = workout.dataPoints.maxOfOrNull { it.resistance }?.toFloat() ?: 100f
-        val yMax = maxResistance * 1.1f
+        // Calculate 110% of max value for better visualization (never a zero-height axis)
+        val maxValue = workout.dataPoints.maxOfOrNull { targetOf(it) }?.toFloat() ?: 100f
+        val yMax = (maxValue * 1.1f).coerceAtLeast(10f)
 
         resistanceHistoryChart.data = LineData(dataSet)
         resistanceHistoryChart.xAxis.axisMinimum = 0f

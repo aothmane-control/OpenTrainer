@@ -13,5 +13,6 @@ data class WorkoutDataPoint(
     val cadence: Int,             // Cadence in RPM
     val heartRate: Int,           // Heart rate in BPM
     val resistance: Int,          // Trainer resistance percentage
-    val distance: Double          // Cumulative distance in meters
+    val distance: Double,         // Cumulative distance in meters
+    val targetPower: Int = 0      // Target power in watts (power workouts only)
 )
