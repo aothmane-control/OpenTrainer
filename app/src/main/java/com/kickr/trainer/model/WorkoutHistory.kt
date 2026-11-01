@@ -5,6 +5,7 @@
 
 package com.kickr.trainer.model
 
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -21,7 +22,8 @@ data class WorkoutHistory(
     val averageSpeed: Double,                      // Average speed in km/h
     val maxSpeed: Float,                           // Maximum speed in km/h
     val averageCadence: Double,                    // Average cadence in RPM
-    val averageHeartRate: Double                   // Average heart rate in BPM
+    val averageHeartRate: Double,                  // Average heart rate in BPM
+    val file: File? = null                         // File this workout was loaded from (not serialized)
 ) {
     fun getDurationSeconds(): Int {
         return ((endTime - startTime) / 1000).toInt()
