@@ -1446,7 +1446,8 @@ class MainActivity : AppCompatActivity() {
                 averageSpeed = avgSpeed,
                 maxSpeed = maxSpeed,
                 averageCadence = avgCadence,
-                averageHeartRate = avgHeartRate
+                averageHeartRate = avgHeartRate,
+                activeDurationSeconds = workoutElapsedSeconds
             )
             
             val savedFile = workoutStorageManager.saveWorkoutHistory(history)
