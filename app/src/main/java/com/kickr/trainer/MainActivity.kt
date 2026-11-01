@@ -1155,9 +1155,10 @@ class MainActivity : AppCompatActivity() {
                 cumulativeDistance += distancePerSecond * secondsDelta
             }
             
-            val currentInterval = workout.getCurrentInterval(workoutElapsedSeconds)
-            if (currentInterval != null) {
-                val intervalIndex = workout.intervals.indexOf(currentInterval) + 1
+            val currentIndex = workout.getCurrentIntervalIndex(workoutElapsedSeconds)
+            if (currentIndex >= 0) {
+                val currentInterval = workout.intervals[currentIndex]
+                val intervalIndex = currentIndex + 1
                 
                 // Play beep when entering a new interval
                 if (intervalIndex != lastIntervalIndex && lastIntervalIndex != -1) {
