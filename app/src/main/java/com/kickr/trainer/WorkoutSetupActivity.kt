@@ -26,6 +26,7 @@ import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 class WorkoutSetupActivity : AppCompatActivity() {
 
@@ -183,7 +184,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
             return
         }
 
-        val durationSeconds = (durationMinutes * 60).toInt()
+        val durationSeconds = (durationMinutes * 60).roundToInt()
         val currentTotal = intervals.sumOf { it.duration }
         if (currentTotal + durationSeconds > totalDurationSeconds) {
             val remainingSeconds = totalDurationSeconds - currentTotal
@@ -266,7 +267,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 
-                val newDurationSeconds = (durationMinutes * 60).toInt()
+                val newDurationSeconds = (durationMinutes * 60).roundToInt()
                 
                 // Check if new duration fits
                 val currentTotal = intervals.sumOf { it.duration } - interval.duration
