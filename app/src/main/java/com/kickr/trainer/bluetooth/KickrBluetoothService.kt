@@ -116,9 +116,16 @@ class KickrBluetoothService(private val context: Context) {
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.d(TAG, "Disconnected from GATT server")
-                    _connectionState.value = ConnectionState.Disconnected
-                    bluetoothGatt = null
+                    Log.d(TAG, "Disconnected from GATT server (status=$status)")
+                    // Release the client interface: Android only has a limited number of them,
+                    // and failed connections (e.g. status 133) also end up here
+                    gatt.close()
+                    // Ignore late callbacks from a connection that has already been replaced
+                    if (bluetoothGatt === gatt) {
+                        bluetoothGatt = null
+                        resetConnectionState()
+                        _connectionState.value = ConnectionState.Disconnected
+                    }
                 }
             }
         }
@@ -257,14 +264,35 @@ class KickrBluetoothService(private val context: Context) {
     fun connect(device: BluetoothDevice) {
         stopScan()
         _connectionState.value = ConnectionState.Connecting
+        // Release any previous connection before opening a new one
+        bluetoothGatt?.close()
+        resetConnectionState()
         bluetoothGatt = device.connectGatt(context, false, gattCallback)
     }
-    
+
     fun disconnect() {
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
+        resetConnectionState()
         _connectionState.value = ConnectionState.Disconnected
+    }
+
+    // Clear everything tied to a single connection, so stale values (e.g. the last speed,
+    // which workouts integrate into distance) don't outlive it and a reconnect starts clean
+    private fun resetConnectionState() {
+        ftmsControlPointCharacteristic = null
+        pendingPowerCommand = null
+        pendingSimulationCommand = null
+        lastCrankRevolutions = null
+        lastCrankEventTime = null
+        lastWheelRevolutions = null
+        lastWheelEventTime = null
+        currentPower = 0
+        currentCadence = 0
+        currentSpeed = 0f
+        currentHeartRate = 0
+        updateTrainerData()
     }
     
     fun setPower(powerWatts: Int) {
