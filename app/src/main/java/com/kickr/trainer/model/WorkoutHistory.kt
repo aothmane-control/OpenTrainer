@@ -21,12 +21,12 @@ data class WorkoutHistory(
     val averageSpeed: Double,                      // Average speed in km/h
     val maxSpeed: Float,                           // Maximum speed in km/h
     val averageCadence: Double,                    // Average cadence in RPM
-    val averageHeartRate: Double                   // Average heart rate in BPM
+    val averageHeartRate: Double,                  // Average heart rate in BPM
+    val activeDurationSeconds: Int? = null         // Workout time excluding pauses (absent in older files)
 ) {
-    // Active (moving) time: data points are recorded once per unpaused workout second.
-    // Falls back to wall-clock time for workouts without data points.
+    // Active time excluding pauses; older files without it fall back to wall-clock time
     fun getDurationSeconds(): Int {
-        return dataPoints.lastOrNull()?.elapsedSeconds ?: ((endTime - startTime) / 1000).toInt()
+        return activeDurationSeconds ?: ((endTime - startTime) / 1000).toInt()
     }
     
     fun getFormattedDate(): String {

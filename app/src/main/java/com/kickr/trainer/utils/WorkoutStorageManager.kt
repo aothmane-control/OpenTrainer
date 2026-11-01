@@ -45,6 +45,7 @@ class WorkoutStorageManager(private val context: Context) {
                 put("maxSpeed", history.maxSpeed)
                 put("averageCadence", history.averageCadence)
                 put("averageHeartRate", history.averageHeartRate)
+                history.activeDurationSeconds?.let { put("activeDurationSeconds", it) }
                 
                 val dataPointsArray = JSONArray()
                 for (point in history.dataPoints) {
@@ -113,7 +114,8 @@ class WorkoutStorageManager(private val context: Context) {
                 averageSpeed = json.getDouble("averageSpeed"),
                 maxSpeed = json.getDouble("maxSpeed").toFloat(),
                 averageCadence = json.getDouble("averageCadence"),
-                averageHeartRate = json.getDouble("averageHeartRate")
+                averageHeartRate = json.getDouble("averageHeartRate"),
+                activeDurationSeconds = if (json.has("activeDurationSeconds")) json.getInt("activeDurationSeconds") else null
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error loading workout history from ${file.name}", e)
