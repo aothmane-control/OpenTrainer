@@ -10,7 +10,9 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.kickr.trainer"
+        // Own ID instead of the Wahoo "KICKR" trademark; permanent once uploaded to Google Play.
+        // The Kotlin namespace (com.kickr.trainer) is internal and stays unchanged.
+        applicationId = "io.github.aothmane.opentrainer"
         minSdk = 26
         targetSdk = 34
         versionCode = 5
