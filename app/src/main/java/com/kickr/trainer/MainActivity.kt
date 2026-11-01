@@ -674,11 +674,8 @@ class MainActivity : AppCompatActivity() {
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
-                
-                // Track workout data if a workout is active
-                if (activeWorkout != null && workoutStartTime > 0) {
-                    recordWorkoutData(data)
-                }
+
+                // Workout data is recorded once per workout second by the workout timer
             }
         }
     }
@@ -725,7 +722,11 @@ class MainActivity : AppCompatActivity() {
         speedChart.invalidate()
     }
     
+    // Called once per (unpaused) workout second, so averages are time-weighted
+    // and independent of how often the trainer sends notifications
     private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData) {
+        if (activeWorkout == null || workoutStartTime == 0L) return
+
         val currentResistance = activeWorkout?.let { workout ->
             if (workout.gpxTrack != null) {
                 workout.getResistanceAtDistance(cumulativeDistance)
@@ -733,7 +734,14 @@ class MainActivity : AppCompatActivity() {
                 workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
             }
         } ?: 0
-        
+        val targetPower = activeWorkout?.let { workout ->
+            if (workout.gpxTrack == null && workout.type == WorkoutType.POWER) {
+                workout.getCurrentInterval(workoutElapsedSeconds)?.power ?: 0
+            } else {
+                0
+            }
+        } ?: 0
+
         val dataPoint = WorkoutDataPoint(
             timestamp = System.currentTimeMillis(),
             elapsedSeconds = workoutElapsedSeconds,
@@ -742,7 +750,8 @@ class MainActivity : AppCompatActivity() {
             cadence = data.cadence,
             heartRate = data.heartRate,
             resistance = currentResistance,
-            distance = cumulativeDistance
+            distance = cumulativeDistance,
+            targetPower = targetPower
         )
         
         workoutDataPoints.add(dataPoint)
@@ -1168,6 +1177,8 @@ class MainActivity : AppCompatActivity() {
                 val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
                 cumulativeDistance += distancePerSecond * secondsDelta
             }
+
+            recordWorkoutData(bluetoothService.trainerData.value)
             
             val currentIndex = workout.getCurrentIntervalIndex(workoutElapsedSeconds)
             if (currentIndex >= 0) {
@@ -1412,7 +1423,11 @@ class MainActivity : AppCompatActivity() {
             
             // Determine workout type and name
             val workout = activeWorkout
-            val workoutType = if (workout?.gpxTrack != null) "GPX" else "RESISTANCE"
+            val workoutType = when {
+                workout?.gpxTrack != null -> "GPX"
+                workout?.type == WorkoutType.POWER -> "POWER"
+                else -> "RESISTANCE"
+            }
             val workoutName = if (workout?.gpxTrack != null) {
                 workout.gpxTrack!!.name
             } else {
@@ -1529,7 +1544,9 @@ class MainActivity : AppCompatActivity() {
         
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
-        
+
+        recordWorkoutData(bluetoothService.trainerData.value)
+
         // Get gradient at current position on track
         val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
         

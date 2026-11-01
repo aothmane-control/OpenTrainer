@@ -25,8 +25,10 @@ data class WorkoutHistory(
     val averageHeartRate: Double,                  // Average heart rate in BPM
     val file: File? = null                         // File this workout was loaded from (not serialized)
 ) {
+    // Active (moving) time: data points are recorded once per unpaused workout second.
+    // Falls back to wall-clock time for workouts without data points.
     fun getDurationSeconds(): Int {
-        return ((endTime - startTime) / 1000).toInt()
+        return dataPoints.lastOrNull()?.elapsedSeconds ?: ((endTime - startTime) / 1000).toInt()
     }
     
     fun getFormattedDate(): String {

@@ -63,6 +63,7 @@ class WorkoutStorageManager(private val context: Context) {
                         put("heartRate", point.heartRate)
                         put("resistance", point.resistance)
                         put("distance", point.distance)
+                        put("targetPower", point.targetPower)
                     }
                     dataPointsArray.put(pointJson)
                 }
@@ -99,7 +100,8 @@ class WorkoutStorageManager(private val context: Context) {
                     cadence = pointJson.getInt("cadence"),
                     heartRate = pointJson.getInt("heartRate"),
                     resistance = pointJson.getInt("resistance"),
-                    distance = pointJson.getDouble("distance")
+                    distance = pointJson.getDouble("distance"),
+                    targetPower = pointJson.optInt("targetPower", 0) // Absent in older files
                 ))
             }
             
