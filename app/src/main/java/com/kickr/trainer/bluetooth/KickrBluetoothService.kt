@@ -767,6 +767,13 @@ class KickrBluetoothService(private val context: Context) {
         val flags = data[0].toInt() and 0xFF
         val hrFormat = flags and 0x01
         
+        // 8-bit values need 2 bytes, 16-bit values 3; a short packet would throw on the binder thread
+        val requiredSize = if (hrFormat == 0) 2 else 3
+        if (data.size < requiredSize) {
+            Log.w(TAG, "Heart Rate Measurement too short: ${data.size} bytes")
+            return
+        }
+        
         currentHeartRate = if (hrFormat == 0) {
             // Heart rate is 8-bit
             data[1].toInt() and 0xFF
