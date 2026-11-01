@@ -175,18 +175,20 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "→ Received FTMS Control Point response")
                     val hexString = value.joinToString(" ") { "0x%02X".format(it) }
                     Log.d(TAG, "   Response bytes: $hexString")
-                    if (value.isNotEmpty()) {
-                        val responseCode = value[0].toInt() and 0xFF
-                        Log.d(TAG, "   Response code: 0x${responseCode.toString(16)} (${
-                            when (responseCode) {
-                                0x80 -> "Response Code"
-                                0x01 -> "Success"
-                                0x02 -> "Not Supported"
-                                0x03 -> "Invalid Parameter"
-                                0x04 -> "Operation Failed"
-                                else -> "Unknown"
-                            }
-                        })")
+                    // Response format: 0x80 (Response Code), request opcode, result code
+                    if (value.size >= 3 && (value[0].toInt() and 0xFF) == 0x80) {
+                        val requestOpcode = value[1].toInt() and 0xFF
+                        val resultCode = value[2].toInt() and 0xFF
+                        val result = when (resultCode) {
+                            0x01 -> "Success"
+                            0x02 -> "Op Code Not Supported"
+                            0x03 -> "Invalid Parameter"
+                            0x04 -> "Operation Failed"
+                            0x05 -> "Control Not Permitted"
+                            else -> "Unknown"
+                        }
+                        val message = "   Response to opcode 0x%02X: 0x%02X (%s)".format(requestOpcode, resultCode, result)
+                        if (resultCode == 0x01) Log.d(TAG, message) else Log.w(TAG, message)
                     }
                 }
                 else -> {
