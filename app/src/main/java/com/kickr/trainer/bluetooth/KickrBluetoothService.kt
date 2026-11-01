@@ -28,8 +28,10 @@ class KickrBluetoothService(private val context: Context) {
     
     private val bluetoothAdapter: BluetoothAdapter? = 
         BluetoothAdapter.getDefaultAdapter()
-    private val bluetoothLeScanner: BluetoothLeScanner? = 
-        bluetoothAdapter?.bluetoothLeScanner
+    // Looked up on each use: the adapter returns null while Bluetooth is off,
+    // so a value cached at construction would stay null after enabling it
+    private val bluetoothLeScanner: BluetoothLeScanner?
+        get() = bluetoothAdapter?.bluetoothLeScanner
     
     private var bluetoothGatt: BluetoothGatt? = null
     
@@ -241,7 +243,13 @@ class KickrBluetoothService(private val context: Context) {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
         
-        bluetoothLeScanner?.startScan(null, scanSettings, scanCallback)
+        val scanner = bluetoothLeScanner
+        if (scanner == null) {
+            Log.w(TAG, "Cannot start scan: Bluetooth LE scanner not available (Bluetooth off?)")
+            return
+        }
+
+        scanner.startScan(null, scanSettings, scanCallback)
         _isScanning.value = true
         Log.d(TAG, "Started BLE scan (no filters)")
     }

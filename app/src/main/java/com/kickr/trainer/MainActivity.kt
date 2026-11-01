@@ -115,7 +115,8 @@ class MainActivity : AppCompatActivity() {
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
-            startBluetoothScan()
+            // Re-run the checks: Bluetooth may still need to be enabled
+            checkPermissionsAndScan()
         } else {
             Toast.makeText(
                 this,
@@ -1528,14 +1529,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Check if Bluetooth is enabled
-        if (!bluetoothService.isBluetoothEnabled()) {
-            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-            enableBluetoothLauncher.launch(enableBtIntent)
-            return
-        }
-
-        // Check permissions based on Android version
+        // Check permissions based on Android version. This must happen before
+        // the enable-Bluetooth request, which requires BLUETOOTH_CONNECT on Android 12+.
         val permissionsNeeded = mutableListOf<String>()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1558,9 +1553,17 @@ class MainActivity : AppCompatActivity() {
 
         if (permissionsNeeded.isNotEmpty()) {
             requestBluetoothPermissions.launch(permissionsNeeded.toTypedArray())
-        } else {
-            startBluetoothScan()
+            return
         }
+
+        // Check if Bluetooth is enabled
+        if (!bluetoothService.isBluetoothEnabled()) {
+            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            enableBluetoothLauncher.launch(enableBtIntent)
+            return
+        }
+
+        startBluetoothScan()
     }
 
     private fun startBluetoothScan() {
