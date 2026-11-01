@@ -24,6 +24,7 @@ import com.kickr.trainer.adapter.IntervalAdapter
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -57,6 +58,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_workout_setup)
+        applyEdgeToEdgeInsets()
 
         initViews()
         setupRecyclerView()

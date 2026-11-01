@@ -43,6 +43,7 @@ import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
+import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -190,6 +191,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         setContentView(R.layout.activity_main)
+        applyEdgeToEdgeInsets()
 
         // Setup toolbar
         val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)

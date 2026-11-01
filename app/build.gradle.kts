@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.kickr.trainer"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.kickr.trainer"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 5
         versionName = "2.3"
 
