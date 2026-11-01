@@ -5,6 +5,51 @@ All notable changes to OpenTrainer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0] - 2026-11-01
+
+### Changed - Google Play Preparation (breaking)
+- **New Application ID:** The app ID is now `io.github.aothmane.opentrainer` (was `com.kickr.trainer`). Android treats this as a new app: installs of 2.x are not updated in place and their workout history is not carried over. Uninstall 2.x after moving to 3.0.
+- **Target SDK 36 (Android 16):** compileSdk and targetSdk raised from 34 to 36, as required by Google Play. All screens now handle edge-to-edge display, keeping content clear of the status bar, navigation bar, camera cutout and keyboard.
+- **Location Permission:** Only requested on Android 11 and below; Android 12+ scans with BLUETOOTH_SCAN (neverForLocation) only.
+- **No Cleartext Traffic:** Plain HTTP is disabled; map tiles are loaded over HTTPS.
+
+### Fixed - Bluetooth
+- **Android 12 and below:** No trainer data was received on Android 8-12 because only the Android 13+ notification callback was implemented.
+- **Dropped BLE Writes:** Bluetooth writes are now queued one at a time. Previously most setup writes after the first were silently dropped (control point indications, wheel circumference, start command, heart rate notifications).
+- **Wheel Circumference:** Corrected the FTMS opcode (0x12; 0x13 is Spin Down Control) and request control before it and the start command.
+- **Lost Trainer Commands:** Commands sent within 200 ms of each other are now delayed instead of dropped, e.g. the resistance reset at the end of a GPX route.
+- **Disconnects:** The GATT connection is closed properly on remote disconnects and failed connections, and stale values (such as the last speed) are cleared.
+- **Bluetooth Off / Android 12+:** Permissions are requested before asking to enable Bluetooth (this crashed on Android 12+), and scanning works after enabling Bluetooth without restarting the app.
+- **Heart Rate:** Truncated heart rate packets are ignored instead of crashing.
+- **Control Point Log:** FTMS control point responses are logged with their actual result code.
+
+### Fixed - Workouts
+- **Pause:** Pausing no longer shortens the workout; workout time is measured excluding pauses.
+- **GPX Workouts:** No longer stop after the time needed at 20 km/h; they end when the route is complete.
+- **Interval Timing:** Intervals no longer switch one second early.
+- **Rotation:** Rotating the phone or switching dark mode no longer ends the workout and disconnects the trainer.
+- **Repeated Intervals:** The interval number is now correct for repeated intervals (e.g. 4x hard/easy).
+- **Disconnect During Workout:** Stop and Pause stay available while the trainer is disconnected, and the current target is resent after reconnecting.
+- **Power Workout Chart:** The workout chart is titled "Power Profile" for power workouts.
+- **Interval List:** Shows "50%" instead of "50%%".
+- **Interval Durations:** Rounded instead of truncated, so editing an interval no longer shortens it by a second.
+
+### Fixed - History & GPX
+- **Recorded Data:** One data point per active second, so averages no longer depend on notification rate and paused time is not recorded.
+- **Duration:** Workout duration excludes pauses (stored as activeDurationSeconds; older workouts show wall-clock time).
+- **Power Workouts in History:** Saved as type POWER with their target power and a power profile chart.
+- **Opening/Deleting History:** Works after timezone or language changes (workouts are found by their file).
+- **History Toolbar:** The delete action is shown as an icon in the toolbar.
+- **GPX Parser:** Supports routes (`<rte>`), skips points without coordinates, and reads heart rate/cadence from Garmin extensions.
+
+### Removed
+- Unused Cycling Power and CSC measurement parsers
+- Stray empty files in the project root
+
+### Technical
+- Android Gradle Plugin 8.2.0 -> 8.13.2, Gradle 8.2 -> 8.14.3 (JDK 17 required)
+- **Version:** Updated to 3.0 (versionCode=6, versionName="3.0"), APK OpenTrainer-3.0.apk
+
 ## [2.3] - 2026-01-11
 
 ### Added - GPX Gradient Simulation

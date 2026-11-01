@@ -2,16 +2,19 @@
 
 ## Prerequisites
 
-1. **Android Studio** (recommended version: Hedgehog | 2023.1.1 or newer)
+1. **Android Studio** (a recent version that supports Android Gradle Plugin 8.13)
    - Download from: https://developer.android.com/studio
 
 2. **Android SDK**
    - Minimum SDK: API 26 (Android 8.0)
-   - Target SDK: API 34 (Android 14)
-   - Build Tools: 34.0.0
+   - Target SDK: API 36 (Android 16)
+   - Build Tools: 36.0.0
 
 3. **Java Development Kit (JDK)**
-   - JDK 8 or higher (JDK 17 recommended)
+   - JDK 17 (required by Android Gradle Plugin 8.13)
+
+4. **Gradle**
+   - Gradle 8.14.3 (see `gradle/wrapper/gradle-wrapper.properties`)
 
 ## Setup Instructions
 
@@ -119,11 +122,11 @@ If you need to change the build configuration:
 Edit `app/build.gradle.kts`:
 ```kotlin
 android {
-    compileSdk = 34  // Change SDK versions here
+    compileSdk = 36  // Change SDK versions here
     
     defaultConfig {
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         // ...
     }
 }
@@ -192,17 +195,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb logcat -s "KickrBluetoothService"
 
 # Clear app data
-adb shell pm clear com.kickr.trainer
+adb shell pm clear io.github.aothmane.opentrainer
 
 # Uninstall app
-adb uninstall com.kickr.trainer
+adb uninstall io.github.aothmane.opentrainer
 ```
 
 ## Project Information
 
-- **Package Name:** com.kickr.trainer
+- **Application ID:** io.github.aothmane.opentrainer (debug builds: io.github.aothmane.opentrainer.debug)
 - **Min SDK:** 26 (Android 8.0 Oreo)
-- **Target SDK:** 34 (Android 14)
+- **Target SDK:** 36 (Android 16)
 - **Language:** Kotlin
 - **Build System:** Gradle with Kotlin DSL
 
