@@ -89,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workoutTimeTextView: TextView
     private lateinit var viewMapButton: Button
     private lateinit var workoutProfileChart: LineChart
+    private lateinit var workoutProfileTitleTextView: TextView
     private lateinit var mapView: MapView
     private lateinit var mapCard: MaterialCardView
     private var currentPositionMarker: Marker? = null
@@ -270,6 +271,7 @@ class MainActivity : AppCompatActivity() {
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
         viewMapButton = findViewById(R.id.viewMapButton)
         workoutProfileChart = findViewById(R.id.workoutProfileChart)
+        workoutProfileTitleTextView = findViewById(R.id.workoutProfileTitleTextView)
         mapView = findViewById(R.id.mapView)
         mapCard = findViewById(R.id.mapCard)
         
@@ -1102,7 +1104,7 @@ class MainActivity : AppCompatActivity() {
         val workout = activeWorkout ?: return
         
         Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
-        Toast.makeText(this, "Workout Started! Scroll to see resistance chart.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Workout Started! Scroll to see the workout chart.", Toast.LENGTH_LONG).show()
         
         workoutElapsedSeconds = 0
         workoutPaused = false
@@ -1266,6 +1268,12 @@ class MainActivity : AppCompatActivity() {
             WorkoutType.RESISTANCE -> "Target Resistance (%)"
             WorkoutType.POWER -> "Target Power (W)"
         }
+        
+        // The card title is shared by both workout types
+        workoutProfileTitleTextView.setText(when (workout.type) {
+            WorkoutType.RESISTANCE -> R.string.resistance_profile
+            WorkoutType.POWER -> R.string.power_profile
+        })
         
         val dataSet = LineDataSet(entries, label).apply {
             color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
