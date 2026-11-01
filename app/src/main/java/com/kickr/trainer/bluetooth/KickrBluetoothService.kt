@@ -53,12 +53,26 @@ class KickrBluetoothService(private val context: Context) {
     private var currentSpeed = 0f
     private var currentHeartRate = 0
     
-    // For callback chaining FTMS control commands
-    private var pendingPowerCommand: ByteArray? = null
-    private var pendingSimulationCommand: ByteArray? = null
     private var ftmsControlPointCharacteristic: BluetoothGattCharacteristic? = null
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
+
+    // Android allows only one outstanding GATT operation at a time. Writes are queued
+    // and the next one is started from the matching completion callback.
+    private sealed class GattOperation {
+        class WriteCharacteristic(
+            val characteristic: BluetoothGattCharacteristic,
+            val value: ByteArray
+        ) : GattOperation()
+
+        class WriteDescriptor(
+            val descriptor: BluetoothGattDescriptor,
+            val value: ByteArray
+        ) : GattOperation()
+    }
+
+    private val gattOperationQueue = ArrayDeque<GattOperation>()
+    private var gattOperationInProgress = false
     
     sealed class ConnectionState {
         object Disconnected : ConnectionState()
@@ -116,6 +130,7 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Disconnected from GATT server")
                     _connectionState.value = ConnectionState.Disconnected
                     bluetoothGatt = null
+                    clearGattOperations()
                 }
             }
         }
@@ -214,29 +229,83 @@ class KickrBluetoothService(private val context: Context) {
                     else -> "ERROR_$status"
                 }
             })")
-            
-            // If this was the Request Control command and we have a pending command, send it now
-            if (status == BluetoothGatt.GATT_SUCCESS && 
-                characteristic.uuid == GattAttributes.FITNESS_MACHINE_CONTROL_POINT &&
-                (pendingPowerCommand != null || pendingSimulationCommand != null)) {
-                
-                if (pendingPowerCommand != null) {
-                    Log.d(TAG, "→ Control granted, sending pending power command")
-                    characteristic.value = pendingPowerCommand
-                    characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                    val success = gatt.writeCharacteristic(characteristic)
-                    Log.d(TAG, "  Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
-                    pendingPowerCommand = null  // Clear pending command
-                } else if (pendingSimulationCommand != null) {
-                    Log.d(TAG, "→ Control granted, sending pending simulation command")
-                    characteristic.value = pendingSimulationCommand
-                    characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                    val success = gatt.writeCharacteristic(characteristic)
-                    Log.d(TAG, "  Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
-                    pendingSimulationCommand = null  // Clear pending command
-                }
+
+            completeGattOperation()
+        }
+
+        override fun onDescriptorWrite(
+            gatt: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            status: Int
+        ) {
+            Log.d(TAG, "Descriptor write completed: characteristic=${descriptor.characteristic.uuid}, status=$status")
+            completeGattOperation()
+        }
+    }
+
+    private fun enqueueGattOperation(operation: GattOperation) {
+        synchronized(gattOperationQueue) {
+            gattOperationQueue.addLast(operation)
+        }
+        executeNextGattOperation()
+    }
+
+    private fun executeNextGattOperation() {
+        val gatt = bluetoothGatt ?: return
+        val operation = synchronized(gattOperationQueue) {
+            if (gattOperationInProgress) return
+            val next = gattOperationQueue.removeFirstOrNull() ?: return
+            gattOperationInProgress = true
+            next
+        }
+
+        val started = when (operation) {
+            is GattOperation.WriteCharacteristic -> {
+                operation.characteristic.value = operation.value
+                operation.characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                gatt.writeCharacteristic(operation.characteristic)
+            }
+            is GattOperation.WriteDescriptor -> {
+                operation.descriptor.value = operation.value
+                gatt.writeDescriptor(operation.descriptor)
             }
         }
+
+        if (!started) {
+            Log.e(TAG, "Failed to start GATT operation, skipping it")
+            completeGattOperation()
+        }
+    }
+
+    private fun completeGattOperation() {
+        synchronized(gattOperationQueue) {
+            gattOperationInProgress = false
+        }
+        executeNextGattOperation()
+    }
+
+    private fun clearGattOperations() {
+        synchronized(gattOperationQueue) {
+            gattOperationQueue.clear()
+            gattOperationInProgress = false
+        }
+    }
+
+    // FTMS requires Request Control (opcode 0x00) before any other control point command
+    private fun sendControlPointCommand(command: ByteArray): Boolean {
+        val characteristic = ftmsControlPointCharacteristic
+            ?: bluetoothGatt?.getService(GattAttributes.FITNESS_MACHINE_SERVICE)
+                ?.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)
+
+        if (characteristic == null) {
+            Log.e(TAG, "FTMS Control Point characteristic not found")
+            return false
+        }
+
+        Log.d(TAG, "  Command bytes: ${command.joinToString(" ") { "0x%02X".format(it) }}")
+        enqueueGattOperation(GattOperation.WriteCharacteristic(characteristic, byteArrayOf(0x00)))
+        enqueueGattOperation(GattOperation.WriteCharacteristic(characteristic, command))
+        return true
     }
     
     fun startScan() {
@@ -278,6 +347,7 @@ class KickrBluetoothService(private val context: Context) {
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
+        clearGattOperations()
         _connectionState.value = ConnectionState.Disconnected
     }
     
@@ -306,36 +376,12 @@ class KickrBluetoothService(private val context: Context) {
         Log.d(TAG, "Power Value: ${powerValue} watts")
         
         // Use FTMS (Fitness Machine Service) exclusively
-        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
-            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
-                // Prepare the target power command to send after control is granted
-                pendingPowerCommand = byteArrayOf(
-                    0x05.toByte(), // Opcode: Set Target Power
-                    (powerValue.toInt() and 0xFF).toByte(),
-                    ((powerValue.toInt() shr 8) and 0xFF).toByte()
-                )
-                
-                Log.d(TAG, "→ FTMS Requesting Control (power command pending)")
-                Log.d(TAG, "  Target power: ${powerWatts}W")
-                
-                // Request control of the trainer (required before setting power)
-                val requestControlCommand = byteArrayOf(0x00.toByte()) // Opcode 0x00: Request Control
-                characteristic.value = requestControlCommand
-                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                
-                Log.d(TAG, "  Command bytes: ${requestControlCommand.joinToString(" ") { "0x%02X".format(it) }}")
-                val controlSuccess = gatt.writeCharacteristic(characteristic)
-                Log.d(TAG, "  Write initiated: ${if (controlSuccess) "✓ SUCCESS" else "✗ FAILED"}")
-                Log.d(TAG, "========================================")
-                
-                if (!controlSuccess) {
-                    Log.e(TAG, "Failed to initiate FTMS Request Control write")
-                    pendingPowerCommand = null  // Clear pending command on failure
-                }
-                // The power command will be sent automatically in onCharacteristicWrite callback
-                return
-            } ?: Log.e(TAG, "FTMS Control Point characteristic not found")
-        } ?: Log.e(TAG, "Fitness Machine Service not found")
+        sendControlPointCommand(byteArrayOf(
+            0x05.toByte(), // Opcode: Set Target Power
+            (powerValue.toInt() and 0xFF).toByte(),
+            ((powerValue.toInt() shr 8) and 0xFF).toByte()
+        ))
+        Log.d(TAG, "========================================")
     }
     
     fun setResistance(resistancePercent: Int) {
@@ -365,74 +411,32 @@ class KickrBluetoothService(private val context: Context) {
         Log.d(TAG, "Resistance Level: ${resistanceLevel} (0.1% units)")
         
         // Use FTMS (Fitness Machine Service) exclusively
-        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
-            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
-                // Prepare the resistance level command to send after control is granted
-                pendingPowerCommand = byteArrayOf(
-                    0x04.toByte(), // Opcode: Set Target Resistance Level
-                    (resistanceLevel.toInt() and 0xFF).toByte(),
-                    ((resistanceLevel.toInt() shr 8) and 0xFF).toByte()
-                )
-                
-                Log.d(TAG, "→ FTMS Requesting Control (resistance command pending)")
-                Log.d(TAG, "  Target resistance: ${resistancePercent}% (${resistanceLevel} in 0.1% units)")
-                
-                // Request control of the trainer (required before setting power)
-                val requestControlCommand = byteArrayOf(0x00.toByte()) // Opcode 0x00: Request Control
-                characteristic.value = requestControlCommand
-                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                
-                Log.d(TAG, "  Command bytes: ${requestControlCommand.joinToString(" ") { "0x%02X".format(it) }}")
-                val controlSuccess = gatt.writeCharacteristic(characteristic)
-                Log.d(TAG, "  Write initiated: ${if (controlSuccess) "✓ SUCCESS" else "✗ FAILED"}")
-                Log.d(TAG, "========================================")
-                
-                if (!controlSuccess) {
-                    Log.e(TAG, "Failed to initiate FTMS Request Control write")
-                    pendingPowerCommand = null  // Clear pending command on failure
-                }
-                // The power command will be sent automatically in onCharacteristicWrite callback
-                return
-            } ?: Log.e(TAG, "FTMS Control Point characteristic not found")
-        } ?: Log.e(TAG, "Fitness Machine Service not found")
-        
-        Log.w(TAG, "FTMS resistance control not available")
-    }
-    
-    private fun setWheelCircumference(circumferenceMm: Float) {
-        val gatt = bluetoothGatt
-        val characteristic = ftmsControlPointCharacteristic
-        
-        if (gatt == null || characteristic == null) {
-            Log.w(TAG, "Cannot set wheel circumference: GATT or characteristic not available")
-            return
+        val queued = sendControlPointCommand(byteArrayOf(
+            0x04.toByte(), // Opcode: Set Target Resistance Level
+            (resistanceLevel.toInt() and 0xFF).toByte(),
+            ((resistanceLevel.toInt() shr 8) and 0xFF).toByte()
+        ))
+        Log.d(TAG, "========================================")
+
+        if (!queued) {
+            Log.w(TAG, "FTMS resistance control not available")
         }
-        
+    }
+
+    private fun setWheelCircumference(circumferenceMm: Float) {
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS SET WHEEL CIRCUMFERENCE")
         Log.d(TAG, "Setting wheel circumference to ${circumferenceMm}mm")
-        
-        // FTMS Set Wheel Circumference (opcode 0x13)
+
+        // FTMS Set Wheel Circumference (opcode 0x12)
         // Parameter: UINT16 in 0.1mm resolution
         val circumference01mm = (circumferenceMm * 10).toInt()
-        val command = byteArrayOf(
-            0x13.toByte(), // Opcode: Set Wheel Circumference
+        sendControlPointCommand(byteArrayOf(
+            0x12.toByte(), // Opcode: Set Wheel Circumference
             (circumference01mm and 0xFF).toByte(),
             ((circumference01mm shr 8) and 0xFF).toByte()
-        )
-        
-        Log.d(TAG, "Command bytes: ${command.joinToString(" ") { "0x%02X".format(it) }}")
-        
-        characteristic.value = command
-        characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        val success = gatt.writeCharacteristic(characteristic)
-        
-        Log.d(TAG, "Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
+        ))
         Log.d(TAG, "========================================")
-        
-        if (!success) {
-            Log.e(TAG, "Failed to set wheel circumference")
-        }
     }
     
     fun setSimulationParameters(
@@ -478,70 +482,29 @@ class KickrBluetoothService(private val context: Context) {
         Log.d(TAG, "  Cw: $cwByte")
         
         // Use FTMS (Fitness Machine Service)
-        gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
-            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
-                // Prepare the simulation parameters command (opcode 0x11)
-                pendingSimulationCommand = byteArrayOf(
-                    0x11.toByte(), // Opcode: Set Indoor Bike Simulation Parameters
-                    (windSpeed.toInt() and 0xFF).toByte(),
-                    ((windSpeed.toInt() shr 8) and 0xFF).toByte(),
-                    (grade.toInt() and 0xFF).toByte(),
-                    ((grade.toInt() shr 8) and 0xFF).toByte(),
-                    crrByte,
-                    cwByte
-                )
-                
-                Log.d(TAG, "→ FTMS Requesting Control (simulation command pending)")
-                
-                // Request control of the trainer
-                val requestControlCommand = byteArrayOf(0x00.toByte()) // Opcode 0x00: Request Control
-                characteristic.value = requestControlCommand
-                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                
-                Log.d(TAG, "  Command bytes: ${requestControlCommand.joinToString(" ") { "0x%02X".format(it) }}")
-                val controlSuccess = gatt.writeCharacteristic(characteristic)
-                Log.d(TAG, "  Write initiated: ${if (controlSuccess) "✓ SUCCESS" else "✗ FAILED"}")
-                Log.d(TAG, "========================================")
-                
-                if (!controlSuccess) {
-                    Log.e(TAG, "Failed to initiate FTMS Request Control write")
-                    pendingSimulationCommand = null  // Clear pending command on failure
-                }
-                // The simulation command will be sent automatically in onCharacteristicWrite callback
-                return
-            } ?: Log.e(TAG, "FTMS Control Point characteristic not found")
-        } ?: Log.e(TAG, "Fitness Machine Service not found")
-        
-        Log.w(TAG, "FTMS simulation control not available")
-    }
-    
-    private fun sendStartCommand() {
-        val gatt = bluetoothGatt
-        val characteristic = ftmsControlPointCharacteristic
-        
-        if (gatt == null || characteristic == null) {
-            Log.w(TAG, "Cannot send start command: GATT or characteristic not available")
-            return
+        val queued = sendControlPointCommand(byteArrayOf(
+            0x11.toByte(), // Opcode: Set Indoor Bike Simulation Parameters
+            (windSpeed.toInt() and 0xFF).toByte(),
+            ((windSpeed.toInt() shr 8) and 0xFF).toByte(),
+            (grade.toInt() and 0xFF).toByte(),
+            ((grade.toInt() shr 8) and 0xFF).toByte(),
+            crrByte,
+            cwByte
+        ))
+        Log.d(TAG, "========================================")
+
+        if (!queued) {
+            Log.w(TAG, "FTMS simulation control not available")
         }
-        
+    }
+
+    private fun sendStartCommand() {
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS START/RESUME COMMAND")
-        
+
         // FTMS Start or Resume (opcode 0x07)
-        val command = byteArrayOf(0x07.toByte())
-        
-        Log.d(TAG, "Command bytes: ${command.joinToString(" ") { "0x%02X".format(it) }}")
-        
-        characteristic.value = command
-        characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        val success = gatt.writeCharacteristic(characteristic)
-        
-        Log.d(TAG, "Write initiated: ${if (success) "✓ SUCCESS" else "✗ FAILED"}")
+        sendControlPointCommand(byteArrayOf(0x07.toByte()))
         Log.d(TAG, "========================================")
-        
-        if (!success) {
-            Log.e(TAG, "Failed to send start command")
-        }
     }
     
     private fun enableNotifications(gatt: BluetoothGatt) {
@@ -572,9 +535,10 @@ class KickrBluetoothService(private val context: Context) {
             service.getCharacteristic(GattAttributes.INDOOR_BIKE_DATA)?.let { characteristic ->
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    val success = gatt.writeDescriptor(descriptor)
-                    Log.d(TAG, "Enabled FTMS Indoor Bike Data notifications: ${if (success) "SUCCESS" else "FAILED"}")
+                    enqueueGattOperation(GattOperation.WriteDescriptor(
+                        descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    ))
+                    Log.d(TAG, "Queued FTMS Indoor Bike Data notifications")
                 }
             } ?: Log.w(TAG, "FTMS Indoor Bike Data characteristic NOT found")
             
@@ -583,9 +547,10 @@ class KickrBluetoothService(private val context: Context) {
                 ftmsControlPointCharacteristic = characteristic
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE // Control point uses indications
-                    val success = gatt.writeDescriptor(descriptor)
-                    Log.d(TAG, "Enabled FTMS Control Point indications: ${if (success) "SUCCESS" else "FAILED"}")
+                    enqueueGattOperation(GattOperation.WriteDescriptor(
+                        descriptor, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE // Control point uses indications
+                    ))
+                    Log.d(TAG, "Queued FTMS Control Point indications")
                 }
                 
                 // Set wheel circumference for proper speed calculation (2100mm = 700c road bike)
@@ -602,9 +567,10 @@ class KickrBluetoothService(private val context: Context) {
             service.getCharacteristic(GattAttributes.HEART_RATE_MEASUREMENT)?.let { characteristic ->
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
-                    Log.d(TAG, "Enabled Heart Rate notifications")
+                    enqueueGattOperation(GattOperation.WriteDescriptor(
+                        descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    ))
+                    Log.d(TAG, "Queued Heart Rate notifications")
                 }
             }
         } ?: Log.d(TAG, "Heart Rate Service not available (optional)")
