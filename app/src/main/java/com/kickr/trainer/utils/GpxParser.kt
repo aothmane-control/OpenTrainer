@@ -16,6 +16,10 @@ import java.io.InputStream
 
 class GpxParser {
     
+    companion object {
+        private const val TAG = "GpxParser"
+    }
+    
     @Throws(XmlPullParserException::class, IOException::class)
     fun parse(inputStream: InputStream): GpxTrack? {
         inputStream.use { stream ->
@@ -31,6 +35,8 @@ class GpxParser {
     private fun readGpx(parser: XmlPullParser): GpxTrack? {
         var trackName = "Unnamed Track"
         val points = mutableListOf<GpxTrackPoint>()
+        var routeName = "Unnamed Track"
+        val routePoints = mutableListOf<GpxTrackPoint>()
         
         parser.require(XmlPullParser.START_TAG, null, "gpx")
         
@@ -47,15 +53,45 @@ class GpxParser {
                         points.addAll(track.second)
                     }
                 }
+                "rte" -> {
+                    val route = readRoute(parser)
+                    if (route != null) {
+                        routeName = route.first
+                        routePoints.addAll(route.second)
+                    }
+                }
                 else -> skip(parser)
             }
         }
         
-        return if (points.isNotEmpty()) {
-            GpxTrack(trackName, points)
-        } else {
-            null
+        // Planned routes (<rte>, e.g. exported from route planners) are only used
+        // when the file has no recorded track
+        return when {
+            points.isNotEmpty() -> GpxTrack(trackName, points)
+            routePoints.isNotEmpty() -> GpxTrack(routeName, routePoints)
+            else -> null
         }
+    }
+    
+    @Throws(XmlPullParserException::class, IOException::class)
+    private fun readRoute(parser: XmlPullParser): Pair<String, List<GpxTrackPoint>>? {
+        parser.require(XmlPullParser.START_TAG, null, "rte")
+        var name = "Unnamed Track"
+        val points = mutableListOf<GpxTrackPoint>()
+        
+        while (parser.next() != XmlPullParser.END_TAG) {
+            if (parser.eventType != XmlPullParser.START_TAG) {
+                continue
+            }
+            
+            when (parser.name) {
+                "name" -> name = readText(parser)
+                "rtept" -> readTrackPoint(parser, "rtept")?.let { points.add(it) }
+                else -> skip(parser)
+            }
+        }
+        
+        return if (points.isNotEmpty()) Pair(name, points) else null
     }
     
     @Throws(XmlPullParserException::class, IOException::class)
@@ -90,7 +126,7 @@ class GpxParser {
             }
             
             if (parser.name == "trkpt") {
-                points.add(readTrackPoint(parser))
+                readTrackPoint(parser, "trkpt")?.let { points.add(it) }
             } else {
                 skip(parser)
             }
@@ -100,11 +136,11 @@ class GpxParser {
     }
     
     @Throws(XmlPullParserException::class, IOException::class)
-    private fun readTrackPoint(parser: XmlPullParser): GpxTrackPoint {
-        parser.require(XmlPullParser.START_TAG, null, "trkpt")
+    private fun readTrackPoint(parser: XmlPullParser, tag: String): GpxTrackPoint? {
+        parser.require(XmlPullParser.START_TAG, null, tag)
         
-        val lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull() ?: 0.0
-        val lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull() ?: 0.0
+        val lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull()
+        val lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull()
         
         var elevation: Double? = null
         var time: String? = null
@@ -130,29 +166,40 @@ class GpxParser {
             }
         }
         
+        // A point without valid coordinates would otherwise be placed at 0,0
+        // and add thousands of kilometers to the track distance
+        if (lat == null || lon == null) {
+            Log.w(TAG, "Skipping <$tag> without valid lat/lon")
+            return null
+        }
+        
         return GpxTrackPoint(lat, lon, elevation, time, heartRate, cadence, power)
     }
     
     @Throws(XmlPullParserException::class, IOException::class)
-    private fun readExtensions(parser: XmlPullParser): Map<String, Int> {
-        val extensions = mutableMapOf<String, Int>()
-        
+    // Descends into container elements such as Garmin's <gpxtpx:TrackPointExtension>,
+    // where hr and cad are nested one level below <extensions>
+    private fun readExtensions(
+        parser: XmlPullParser,
+        extensions: MutableMap<String, Int> = mutableMapOf()
+    ): Map<String, Int> {
         while (parser.next() != XmlPullParser.END_TAG) {
             if (parser.eventType != XmlPullParser.START_TAG) {
                 continue
             }
             
-            when {
-                parser.name.contains("hr", ignoreCase = true) -> {
-                    extensions["hr"] = readText(parser).toIntOrNull() ?: 0
+            // Namespace processing is off, so names keep their prefix (e.g. "gpxtpx:hr")
+            when (parser.name.substringAfter(':').lowercase()) {
+                "hr", "heartrate" -> {
+                    extensions["hr"] = readText(parser).trim().toIntOrNull() ?: 0
                 }
-                parser.name.contains("cad", ignoreCase = true) -> {
-                    extensions["cad"] = readText(parser).toIntOrNull() ?: 0
+                "cad", "cadence" -> {
+                    extensions["cad"] = readText(parser).trim().toIntOrNull() ?: 0
                 }
-                parser.name.contains("power", ignoreCase = true) -> {
-                    extensions["power"] = readText(parser).toIntOrNull() ?: 0
+                "power", "powerinwatts", "watts" -> {
+                    extensions["power"] = readText(parser).trim().toIntOrNull() ?: 0
                 }
-                else -> skip(parser)
+                else -> readExtensions(parser, extensions)
             }
         }
         
