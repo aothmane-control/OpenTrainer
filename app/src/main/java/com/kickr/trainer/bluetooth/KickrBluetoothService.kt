@@ -60,12 +60,6 @@ class KickrBluetoothService(private val context: Context) {
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     
-    // Cycling Power Measurement parsing
-    private var lastCrankRevolutions: Int? = null
-    private var lastCrankEventTime: Int? = null
-    private var lastWheelRevolutions: Long? = null
-    private var lastWheelEventTime: Int? = null
-    
     sealed class ConnectionState {
         object Disconnected : ConnectionState()
         object Connecting : ConnectionState()
@@ -162,10 +156,6 @@ class KickrBluetoothService(private val context: Context) {
                 GattAttributes.INDOOR_BIKE_DATA -> {
                     Log.d(TAG, "→ Received FTMS Indoor Bike Data notification")
                     parseIndoorBikeData(value)
-                }
-                GattAttributes.CYCLING_POWER_MEASUREMENT -> {
-                    Log.d(TAG, "→ Received Cycling Power Measurement notification")
-                    parseCyclingPowerMeasurement(value)
                 }
                 GattAttributes.HEART_RATE_MEASUREMENT -> {
                     Log.d(TAG, "→ Received Heart Rate Measurement notification")
@@ -618,171 +608,6 @@ class KickrBluetoothService(private val context: Context) {
                 }
             }
         } ?: Log.d(TAG, "Heart Rate Service not available (optional)")
-    }
-    
-    private fun parseCyclingPowerMeasurement(data: ByteArray) {
-        if (data.size < 4) return
-        
-        val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-        val flags = buffer.getShort().toInt() and 0xFFFF
-        
-        // Instantaneous Power is always present (2 bytes)
-        val power = buffer.getShort().toInt() and 0xFFFF
-        currentPower = power
-        
-        Log.d(TAG, "Cycling Power: power=$power W, flags=0x${flags.toString(16)}, dataSize=${data.size}, bufferRemaining=${buffer.remaining()}, hasWheel=${flags and 0x10 != 0}, hasCrank=${flags and 0x20 != 0}")
-        
-        // Parse additional fields based on flags
-        if (flags and 0x01 != 0) { // Pedal Power Balance Present
-            buffer.get()
-        }
-        
-        if (flags and 0x04 != 0) { // Accumulated Torque Present
-            buffer.getShort()
-        }
-        
-        if (flags and 0x10 != 0) { // Wheel Revolution Data Present
-            Log.d(TAG, "Wheel data flag set, buffer remaining: ${buffer.remaining()}")
-            if (buffer.remaining() >= 6) {
-                val wheelRevolutions = buffer.getInt().toLong() and 0xFFFFFFFFL
-                val wheelEventTime = buffer.getShort().toInt() and 0xFFFF
-                
-                Log.d(TAG, "Wheel: revolutions=$wheelRevolutions, eventTime=$wheelEventTime, lastRev=$lastWheelRevolutions, lastTime=$lastWheelEventTime")
-                
-                if (lastWheelRevolutions != null && lastWheelEventTime != null) {
-                    val revDelta = (wheelRevolutions - lastWheelRevolutions!!).toFloat()
-                    var timeDelta = wheelEventTime - lastWheelEventTime!!
-                    if (timeDelta < 0) timeDelta += 65536
-                    
-                    Log.d(TAG, "Deltas: revDelta=$revDelta, timeDelta=$timeDelta")
-                    
-                    // Only calculate speed if time delta is reasonable (between 100ms and 5s)
-                    // This filters out stale data and prevents speed spikes
-                    val timeInSeconds = timeDelta / 1024.0f
-                    if (timeInSeconds >= 0.1f && timeInSeconds <= 5.0f) {
-                        if (revDelta > 0) {
-                            // Kickr uses a very small virtual wheel circumference
-                            // Based on empirical testing: use 0.28m to get realistic speeds
-                            val distanceMeters = revDelta * 0.28f
-                            val speedMps = distanceMeters / timeInSeconds
-                            val speedKmh = speedMps * 3.6f
-                            
-                            Log.d(TAG, "Speed calc: timeInSec=$timeInSeconds, distanceM=$distanceMeters, speedMps=$speedMps, speedKmh=$speedKmh")
-                            
-                            if (speedKmh >= 0 && speedKmh < 100) {
-                                currentSpeed = speedKmh
-                                Log.d(TAG, "✓ Speed SET: $speedKmh km/h")
-                            } else {
-                                Log.w(TAG, "✗ Speed out of range: $speedKmh km/h")
-                            }
-                        } else {
-                            // No wheel movement = 0 speed
-                            currentSpeed = 0f
-                            Log.d(TAG, "Speed: 0 km/h (no wheel movement, revDelta=$revDelta)")
-                        }
-                    } else {
-                        Log.d(TAG, "Time delta out of range: $timeInSeconds seconds (ignored)")
-                    }
-                } else {
-                    Log.d(TAG, "First wheel data received: rev=$wheelRevolutions, time=$wheelEventTime")
-                }
-                
-                lastWheelRevolutions = wheelRevolutions
-                lastWheelEventTime = wheelEventTime
-            } else {
-                Log.w(TAG, "Wheel data flag set but not enough buffer data: ${buffer.remaining()} bytes")
-            }
-        }
-        
-        if (flags and 0x20 != 0) { // Crank Revolution Data Present
-            if (buffer.remaining() >= 4) {
-                val crankRevolutions = buffer.getShort().toInt() and 0xFFFF
-                val crankEventTime = buffer.getShort().toInt() and 0xFFFF
-                
-                if (lastCrankRevolutions != null && lastCrankEventTime != null) {
-                    val revDelta = crankRevolutions - lastCrankRevolutions!!
-                    var timeDelta = crankEventTime - lastCrankEventTime!!
-                    if (timeDelta < 0) timeDelta += 65536
-                    
-                    if (timeDelta > 0) {
-                        // Cadence calculation
-                        val cadence = (revDelta * 1024 * 60) / timeDelta
-                        currentCadence = if (cadence > 0) cadence else 0
-                        Log.d(TAG, "Cadence: $currentCadence RPM (revDelta=$revDelta, timeDelta=$timeDelta)")
-                    }
-                } else {
-                    Log.d(TAG, "First crank data received: rev=$crankRevolutions, time=$crankEventTime")
-                }
-                
-                lastCrankRevolutions = crankRevolutions
-                lastCrankEventTime = crankEventTime
-            }
-        }
-    }
-    
-    private fun parseCscMeasurement(data: ByteArray) {
-        if (data.isEmpty()) return
-        
-        val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-        val flags = buffer.get().toInt() and 0xFF
-        
-        Log.d(TAG, "CSC Measurement - flags: 0x${flags.toString(16)}")
-        
-        if (flags and 0x01 != 0) { // Wheel Revolution Data Present
-            if (buffer.remaining() >= 6) {
-                val wheelRevolutions = buffer.getInt().toLong() and 0xFFFFFFFFL
-                val wheelEventTime = buffer.getShort().toInt() and 0xFFFF
-                
-                Log.d(TAG, "CSC Wheel: revolutions=$wheelRevolutions, eventTime=$wheelEventTime")
-                
-                if (lastWheelRevolutions != null && lastWheelEventTime != null) {
-                    val revDelta = (wheelRevolutions - lastWheelRevolutions!!).toFloat()
-                    var timeDelta = wheelEventTime - lastWheelEventTime!!
-                    if (timeDelta < 0) timeDelta += 65536
-                    
-                    if (timeDelta > 0 && revDelta > 0) {
-                        // Wheel event time is in 1/1024 seconds
-                        val timeInSeconds = timeDelta / 1024.0f
-                        val wheelCircumference = 2.105f // meters for 700c wheel
-                        val distanceMeters = revDelta * wheelCircumference
-                        val speedMps = distanceMeters / timeInSeconds
-                        val speedKmh = speedMps * 3.6f
-                        
-                        // Only update if speed is reasonable (0-80 km/h)
-                        if (speedKmh > 0 && speedKmh < 80) {
-                            currentSpeed = speedKmh
-                            Log.d(TAG, "CSC Speed: revDelta=$revDelta, timeDelta=$timeDelta, timeSeconds=$timeInSeconds, speed=$currentSpeed km/h")
-                        } else {
-                            Log.w(TAG, "CSC Speed out of range: $speedKmh km/h - ignoring")
-                        }
-                    }
-                }
-                
-                lastWheelRevolutions = wheelRevolutions
-                lastWheelEventTime = wheelEventTime
-            }
-        }
-        
-        if (flags and 0x02 != 0) { // Crank Revolution Data Present
-            if (buffer.remaining() >= 4) {
-                val crankRevolutions = buffer.getShort().toInt() and 0xFFFF
-                val crankEventTime = buffer.getShort().toInt() and 0xFFFF
-                
-                if (lastCrankRevolutions != null && lastCrankEventTime != null) {
-                    val revDelta = crankRevolutions - lastCrankRevolutions!!
-                    var timeDelta = crankEventTime - lastCrankEventTime!!
-                    if (timeDelta < 0) timeDelta += 65536
-                    
-                    if (timeDelta > 0) {
-                        val cadence = (revDelta * 1024 * 60) / timeDelta
-                        currentCadence = if (cadence > 0) cadence else 0
-                    }
-                }
-                
-                lastCrankRevolutions = crankRevolutions
-                lastCrankEventTime = crankEventTime
-            }
-        }
     }
     
     private fun parseHeartRateMeasurement(data: ByteArray) {
