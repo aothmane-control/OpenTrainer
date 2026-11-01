@@ -13,6 +13,7 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Build
 import android.os.ParcelUuid
 import android.util.Log
 import com.kickr.trainer.model.KickrDevice
@@ -192,7 +193,20 @@ class KickrBluetoothService(private val context: Context) {
             }
             updateTrainerData()
         }
-        
+
+        // Android 12 (API 32) and below only call this deprecated overload
+        @Deprecated("Deprecated in Java")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                val value = characteristic.value ?: return
+                onCharacteristicChanged(gatt, characteristic, value)
+            }
+        }
+
         override fun onCharacteristicWrite(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
