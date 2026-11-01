@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <!-- No cleartext (HTTP) traffic: the only network access is OpenStreetMap
+         map tiles, which osmdroid's MAPNIK source loads over HTTPS -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    
-    <!-- Allow cleartext traffic for OpenStreetMap tile servers -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">tile.openstreetmap.org</domain>
-        <domain includeSubdomains="true">openstreetmap.org</domain>
-    </domain-config>
 </network-security-config>
