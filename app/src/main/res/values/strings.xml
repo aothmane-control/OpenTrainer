@@ -50,6 +50,7 @@
     <string name="current_interval_format">Interval %d of %d</string>
     <string name="target_resistance_format">Target: %d%%</string>
     <string name="workout_active">Workout Active</string>
+    <string name="workout_preview">Connected (faked with sample data)</string>
     <string name="workout_interval_format">Interval %1$d of %2$d</string>
     <string name="workout_resistance_format">Target: %1$d%%</string>
     <string name="workout_complete">Workout Complete!</string>

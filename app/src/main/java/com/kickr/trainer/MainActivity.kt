@@ -8,6 +8,7 @@ package com.kickr.trainer
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.AudioAttributes
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         private const val WORKOUT_TICK_MS = 250L
     }
 
+    private var isWorkoutPreview = false
     private lateinit var bluetoothService: KickrBluetoothService
     private lateinit var deviceAdapter: DeviceAdapter
     
@@ -206,6 +208,14 @@ class MainActivity : AppCompatActivity() {
         val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
 
+        isWorkoutPreview = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+            intent.getBooleanExtra("preview", false)
+        if (isWorkoutPreview) {
+            initViews()
+            showWorkoutPreview()
+            return
+        }
+
         bluetoothService = KickrBluetoothService(this)
         workoutStorageManager = WorkoutStorageManager(this)
         
@@ -247,6 +257,51 @@ class MainActivity : AppCompatActivity() {
         setupClickListeners()
     }
 
+    // A frozen workout for inspecting the real layout without a trainer or workout side effects.
+    private fun showWorkoutPreview() {
+        connectionStatusTextView.setText(R.string.workout_preview)
+        connectionStatusTextView.setTextColor(
+            ContextCompat.getColor(this, android.R.color.holo_green_dark)
+        )
+        listOf(scanButton, disconnectButton, setupWorkoutButton, viewGpxButton,
+            viewHistoryButton, viewMapButton, devicesRecyclerView, mapCard).forEach {
+            it.visibility = View.GONE
+        }
+        listOf(dataScrollView, workoutStatusCard, workoutChartCard,
+            stopWorkoutButton, pauseResumeWorkoutButton).forEach {
+            it.visibility = View.VISIBLE
+        }
+        stopWorkoutButton.isEnabled = false
+        pauseResumeWorkoutButton.isEnabled = false
+        pauseResumeWorkoutButton.setText(R.string.pause_workout)
+
+        val workout = Workout(1200, listOf(
+            WorkoutInterval(300, 20), WorkoutInterval(300, 40),
+            WorkoutInterval(300, 60), WorkoutInterval(300, 30)
+        ))
+        val elapsedSeconds = 446
+        val remainingSeconds = workout.getRemainingTime(elapsedSeconds)
+        workoutIntervalTextView.text = getString(R.string.workout_interval_format,
+            workout.getCurrentIntervalIndex(elapsedSeconds) + 1, workout.intervals.size)
+        workoutResistanceTextView.text = getString(R.string.workout_resistance_format,
+            workout.getCurrentInterval(elapsedSeconds)!!.resistance)
+        workoutTimeTextView.text = getString(R.string.workout_time_format,
+            remainingSeconds / 60, remainingSeconds % 60)
+        powerTextView.text = getString(R.string.power_format, 180)
+        cadenceTextView.text = getString(R.string.cadence_format, 85)
+        speedTextView.text = getString(R.string.speed_format, 28f)
+        distanceTextView.text = getString(R.string.distance_format, 6.25)
+
+        buildWorkoutProfileChart(workout)
+        updateWorkoutProfileProgress(workout, elapsedSeconds)
+        startTime = System.currentTimeMillis() - 20_000L
+        for (second in 0 until 20) {
+            powerDataPoints.add(Entry(second.toFloat(), 180f + (second % 5 - 2) * 8))
+            speedDataPoints.add(Entry(second.toFloat(), 28f + (second % 5 - 2) * 0.2f))
+        }
+        updateCharts(180, 28f)
+    }
+
     private fun initViews() {
         scanButton = findViewById(R.id.scanButton)
         disconnectButton = findViewById(R.id.disconnectButton)
@@ -275,7 +330,7 @@ class MainActivity : AppCompatActivity() {
         mapView = findViewById(R.id.mapView)
         mapCard = findViewById(R.id.mapCard)
         
-        setupMap()
+        if (!isWorkoutPreview) setupMap()
         
         if (workoutStatusCard == null || workoutChartCard == null) {
             Log.e(TAG, "ERROR: Workout cards not found in layout!")
@@ -1658,9 +1713,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stopWorkout()
-        bluetoothService.stopScan()
-        bluetoothService.disconnect()
+        if (!isWorkoutPreview) {
+            stopWorkout()
+            bluetoothService.stopScan()
+            bluetoothService.disconnect()
+        }
         mapView.onDetach()
         soundPool?.release()
         soundPool = null
