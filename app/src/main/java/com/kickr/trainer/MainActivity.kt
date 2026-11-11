@@ -19,9 +19,12 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
+import android.view.ViewGroup
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +42,8 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.google.android.material.card.MaterialCardView
 import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
+import com.kickr.trainer.model.KickrDevice
+import com.kickr.trainer.model.TrainerData
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
@@ -62,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val WORKOUT_TICK_MS = 250L
+        private const val COMPACT_LAYOUT_PREFERENCE = "compact_workout_layout"
     }
 
     private var isWorkoutPreview = false
@@ -78,6 +84,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
     private lateinit var dataScrollView: NestedScrollView
+    private lateinit var compactLayoutCheckBox: CheckBox
+    private lateinit var compactWorkoutView: CompactWorkoutView
+    private var reconnectDialog: AlertDialog? = null
+    private var reconnectAdapter: ArrayAdapter<KickrDevice>? = null
+    private val isCompactWorkout: Boolean
+        get() = compactLayoutCheckBox.isChecked && activeWorkout?.let { it.gpxTrack == null } == true
     private lateinit var powerTextView: TextView
     private lateinit var cadenceTextView: TextView
     private lateinit var speedTextView: TextView
@@ -264,7 +276,7 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getColor(this, android.R.color.holo_green_dark)
         )
         listOf(scanButton, disconnectButton, setupWorkoutButton, viewGpxButton,
-            viewHistoryButton, viewMapButton, devicesRecyclerView, mapCard).forEach {
+            viewHistoryButton, viewMapButton, devicesRecyclerView, mapCard, compactLayoutCheckBox).forEach {
             it.visibility = View.GONE
         }
         listOf(dataScrollView, workoutStatusCard, workoutChartCard,
@@ -300,6 +312,18 @@ class MainActivity : AppCompatActivity() {
             speedDataPoints.add(Entry(second.toFloat(), 28f + (second % 5 - 2) * 0.2f))
         }
         updateCharts(180, 28f)
+
+        // Preview layout is explicit and never reads or changes the saved compact preference.
+        if (intent.getBooleanExtra("compact", false)) {
+            compactWorkoutView.setVisible(true)
+            listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
+                findViewById<View>(R.id.copyrightTextView), dataScrollView,
+                stopWorkoutButton, pauseResumeWorkoutButton).forEach { it.visibility = View.GONE }
+            compactWorkoutView.render(
+                workout, elapsedSeconds, false, TrainerData(power = 180, cadence = 85, speed = 28f),
+                6.25, KickrBluetoothService.ConnectionState.Connected
+            )
+        }
     }
 
     private fun initViews() {
@@ -340,6 +364,91 @@ class MainActivity : AppCompatActivity() {
         
         setupCharts()
         setupWorkoutProfileChart()
+        compactLayoutCheckBox = findViewById(R.id.compactLayoutCheckBox)
+        compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, false)
+        compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
+            getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
+        }
+        compactWorkoutView = CompactWorkoutView(
+            findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart,
+            onPause = { togglePauseResumeWorkout() },
+            onStop = { stopWorkout() },
+            onConnection = {
+                when (bluetoothService.connectionState.value) {
+                    KickrBluetoothService.ConnectionState.Connected ->
+                        Toast.makeText(this, R.string.connected, Toast.LENGTH_SHORT).show()
+                    KickrBluetoothService.ConnectionState.Connecting ->
+                        Toast.makeText(this, R.string.connecting, Toast.LENGTH_SHORT).show()
+                    else -> showCompactReconnectDialog()
+                }
+            },
+            isPreview = isWorkoutPreview
+        )
+    }
+
+    private fun updateWorkoutLayout() {
+        val state = bluetoothService.connectionState.value
+        val wasCompact = compactWorkoutView.isVisible
+        val compact = isCompactWorkout
+        compactWorkoutView.setVisible(compact)
+        compactLayoutCheckBox.visibility = if (
+            state is KickrBluetoothService.ConnectionState.Disconnected && activeWorkout == null
+        ) View.VISIBLE else View.GONE
+        listOf(R.id.toolbar, R.id.connectionStatusTextView, R.id.copyrightTextView).forEach {
+            findViewById<View>(it).visibility = if (compact) View.GONE else View.VISIBLE
+        }
+        if (compact) {
+            listOf(scanButton, devicesRecyclerView, dataScrollView, stopWorkoutButton,
+                pauseResumeWorkoutButton).forEach { it.visibility = View.GONE }
+        } else {
+            if (wasCompact) {
+                scanButton.visibility = if (state is KickrBluetoothService.ConnectionState.Disconnected) {
+                    View.VISIBLE
+                } else View.GONE
+            }
+            if (wasCompact || activeWorkout != null) {
+                dataScrollView.visibility = if (
+                    activeWorkout != null || state is KickrBluetoothService.ConnectionState.Connected
+                ) View.VISIBLE else View.GONE
+            }
+        }
+        renderCompactWorkout()
+    }
+
+    private fun renderCompactWorkout() {
+        if (!compactWorkoutView.isVisible) return
+        val workout = activeWorkout ?: return
+        compactWorkoutView.render(
+            workout, workoutElapsedSeconds, workoutPaused, bluetoothService.trainerData.value,
+            cumulativeDistance / 1000.0, bluetoothService.connectionState.value
+        )
+    }
+
+    private fun showCompactReconnectDialog() {
+        if (reconnectDialog != null) return
+        val adapter = object : ArrayAdapter<KickrDevice>(this, android.R.layout.simple_list_item_1,
+            bluetoothService.discoveredDevices.value.toMutableList()) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+                (super.getView(position, convertView, parent) as TextView).apply {
+                    text = getItem(position)?.name
+                }
+        }
+        reconnectAdapter = adapter
+        reconnectDialog = AlertDialog.Builder(this)
+            .setTitle(R.string.scan_for_devices)
+            .setAdapter(adapter) { _, index ->
+                adapter.getItem(index)?.let { bluetoothService.connect(it.device) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .create().also { dialog ->
+                dialog.setOnDismissListener {
+                    bluetoothService.stopScan()
+                    reconnectAdapter = null
+                    reconnectDialog = null
+                }
+                dialog.show()
+            }
+        checkPermissionsAndScan()
     }
     
     private fun setupCharts() {
@@ -645,6 +754,11 @@ class MainActivity : AppCompatActivity() {
             bluetoothService.discoveredDevices.collect { devices ->
                 deviceAdapter.updateDevices(devices)
                 devicesRecyclerView.visibility = if (devices.isEmpty()) View.GONE else View.VISIBLE
+                reconnectAdapter?.apply {
+                    clear()
+                    addAll(devices)
+                }
+                updateWorkoutLayout()
             }
         }
 
@@ -679,6 +793,7 @@ class MainActivity : AppCompatActivity() {
                         dataScrollView.visibility = if (activeWorkout != null) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connected -> {
+                        reconnectDialog?.dismiss()
                         connectionStatusTextView.text = getString(R.string.connected)
                         connectionStatusTextView.setTextColor(
                             ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
@@ -715,6 +830,7 @@ class MainActivity : AppCompatActivity() {
                         Toast.makeText(this@MainActivity, state.message, Toast.LENGTH_LONG).show()
                     }
                 }
+                updateWorkoutLayout()
             }
         }
 
@@ -733,6 +849,7 @@ class MainActivity : AppCompatActivity() {
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
+                renderCompactWorkout()
 
                 // Workout data is recorded once per workout second by the workout timer
             }
@@ -1113,6 +1230,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Workout Resumed", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout resumed at ${workoutElapsedSeconds}s")
         }
+        renderCompactWorkout()
     }
 
     // Elapsed workout time excluding pauses, based on the monotonic clock
@@ -1138,6 +1256,7 @@ class MainActivity : AppCompatActivity() {
                         val secondsDelta = elapsed - workoutElapsedSeconds
                         workoutElapsedSeconds = elapsed
                         onSecond(secondsDelta)
+                        renderCompactWorkout()
                     }
                 }
                 // onSecond may have stopped the workout
@@ -1159,7 +1278,10 @@ class MainActivity : AppCompatActivity() {
         val workout = activeWorkout ?: return
         
         Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
-        Toast.makeText(this, "Workout Started! Scroll to see the workout chart.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, if (isCompactWorkout) {
+            getString(R.string.compact_workout_started)
+        } else "Workout Started! Scroll to see the workout chart.", Toast.LENGTH_LONG).show()
+        compactWorkoutView.reset()
         
         workoutElapsedSeconds = 0
         workoutPaused = false
@@ -1301,6 +1423,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        updateWorkoutLayout()
         Log.d(TAG, "Workout timer started")
     }
     
@@ -1462,6 +1585,7 @@ class MainActivity : AppCompatActivity() {
         // Reset resistance to 0
         bluetoothService.setResistance(0)
         Log.d(TAG, "Resistance reset to 0%")
+        updateWorkoutLayout()
     }
     
     private fun saveWorkoutHistory() {
@@ -1592,6 +1716,7 @@ class MainActivity : AppCompatActivity() {
         startWorkoutTicker { secondsDelta ->
             updateGpxWorkout(secondsDelta)
         }
+        updateWorkoutLayout()
     }
 
     private fun updateGpxWorkout(secondsDelta: Int) {
@@ -1714,6 +1839,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (!isWorkoutPreview) {
+            reconnectDialog?.dismiss()
             stopWorkout()
             bluetoothService.stopScan()
             bluetoothService.disconnect()
