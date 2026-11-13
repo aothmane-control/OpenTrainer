@@ -25,6 +25,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.VisibleForTesting
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -84,7 +85,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dataScrollView: NestedScrollView
     private lateinit var compactLayoutCheckBox: CheckBox
     private lateinit var compactWorkoutView: CompactWorkoutView
-    private var reconnectDialog: AlertDialog? = null
+    @VisibleForTesting
+    internal var reconnectDialog: AlertDialog? = null
+        private set
     private var reconnectAdapter: DeviceAdapter? = null
     // Scan results are listed until the connection state next changes
     private var showDeviceList = false

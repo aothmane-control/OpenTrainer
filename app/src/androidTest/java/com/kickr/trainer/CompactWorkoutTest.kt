@@ -1,8 +1,12 @@
 package com.kickr.trainer
 
+import android.Manifest
 import android.app.Activity
+import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
+import android.os.Build
 import android.os.SystemClock
 import android.view.View
 import android.widget.Button
@@ -18,6 +22,7 @@ import com.kickr.trainer.model.GpxTrackPoint
 import java.io.File
 import org.junit.After
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -171,6 +176,49 @@ class CompactWorkoutTest {
             }
             stopWorkout(scenario, R.id.stopWorkoutButton)
         }
+    }
+
+    @Test
+    fun compactReconnectDialogScansUntilCancelled() {
+        val bluetooth = context.getSystemService(BluetoothManager::class.java)?.adapter
+        assumeTrue("Needs Bluetooth turned on", bluetooth?.isEnabled == true)
+        grantBluetoothPermissions()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = true }
+            startIntervals(scenario)
+            scenario.onActivity { activity ->
+                assertCompact(activity)
+                val connection = activity.findViewById<Button>(R.id.compactConnectionButton)
+                assertEquals(activity.getString(R.string.compact_reconnect), connection.text.toString())
+                connection.performClick()
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertTrue(activity.reconnectDialog?.isShowing == true)
+                // The hidden classic scan button still follows the scanning state
+                assertEquals(activity.getString(R.string.stop_scan), text(activity, R.id.scanButton))
+                // Compact mode lists devices in the dialog, never in the classic list
+                assertEquals(View.GONE, activity.findViewById<View>(R.id.devicesRecyclerView).visibility)
+            }
+            scenario.onActivity { activity ->
+                activity.reconnectDialog!!.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertNull(activity.reconnectDialog)
+                assertEquals("Closing the dialog must stop the scan",
+                    activity.getString(R.string.scan_for_devices), text(activity, R.id.scanButton))
+            }
+            stopWorkout(scenario, R.id.compactStopButton)
+        }
+    }
+
+    // The dialog scans right away; without these, a system permission prompt would block the test
+    private fun grantBluetoothPermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        permissions.forEach { instrumentation.uiAutomation.grantRuntimePermission(context.packageName, it) }
     }
 
     private fun startIntervals(scenario: ActivityScenario<MainActivity>, power: Boolean = false) {
