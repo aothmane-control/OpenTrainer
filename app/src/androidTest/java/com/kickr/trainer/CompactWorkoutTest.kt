@@ -1,6 +1,7 @@
 package com.kickr.trainer
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.view.View
@@ -15,7 +16,9 @@ import com.github.mikephil.charting.charts.LineChart
 import com.google.android.material.tabs.TabLayout
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.GpxTrackPoint
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -23,6 +26,25 @@ import org.junit.runner.RunWith
 class CompactWorkoutTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
+    // Same file as MainActivity.getPreferences()
+    private val preferences = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
+    private var savedCompactPreference: Boolean? = null
+
+    @Before
+    fun rememberCompactPreference() {
+        savedCompactPreference = if (preferences.contains(COMPACT_PREFERENCE)) {
+            preferences.getBoolean(COMPACT_PREFERENCE, false)
+        } else null
+    }
+
+    // Runs even when a test fails, so the device keeps the user's own layout choice
+    @After
+    fun restoreCompactPreference() {
+        preferences.edit().apply {
+            val original = savedCompactPreference
+            if (original == null) remove(COMPACT_PREFERENCE) else putBoolean(COMPACT_PREFERENCE, original)
+        }.commit()
+    }
 
     @Test
     fun compactPreferenceMetricSwapTimerAndReturnToClassic() {
@@ -95,7 +117,6 @@ class CompactWorkoutTest {
                 assertEquals(0, activity.findViewById<TabLayout>(R.id.compactChartTabs).selectedTabPosition)
             }
             stopWorkout(scenario, R.id.compactStopButton)
-            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = false }
         }
     }
 
@@ -141,7 +162,6 @@ class CompactWorkoutTest {
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.compactLayoutCheckBox).visibility)
             }
             stopWorkout(scenario, R.id.stopWorkoutButton)
-            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = false }
         }
     }
 
@@ -201,4 +221,8 @@ class CompactWorkoutTest {
     }
 
     private fun text(activity: MainActivity, id: Int) = activity.findViewById<TextView>(id).text.toString()
+
+    private companion object {
+        const val COMPACT_PREFERENCE = "compact_workout_layout"
+    }
 }
