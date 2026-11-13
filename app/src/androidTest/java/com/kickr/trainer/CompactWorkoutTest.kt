@@ -34,7 +34,8 @@ class CompactWorkoutTest {
     // Same file as MainActivity.getPreferences()
     private val preferences = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
     private var savedCompactPreference: Boolean? = null
-    private val savedWorkoutFiles = mutableListOf<File>()
+    private val historyDirectory = File(context.filesDir, "workout_history")
+    private var historyBeforeTest = emptySet<String>()
 
     @Before
     fun rememberCompactPreference() {
@@ -52,11 +53,16 @@ class CompactWorkoutTest {
         }.commit()
     }
 
-    // Stopping a workout saves it to the history; don't leave test workouts in the user's history
+    @Before
+    fun rememberWorkoutHistory() {
+        historyBeforeTest = historyDirectory.list()?.toSet() ?: emptySet()
+    }
+
+    // Stopping a workout saves it to the history, and so does closing the activity during one
+    // when a test fails. Delete whatever the test added, so no test workouts stay in the history.
     @After
     fun deleteSavedWorkouts() {
-        savedWorkoutFiles.forEach { it.delete() }
-        savedWorkoutFiles.clear()
+        historyDirectory.listFiles()?.filter { it.name !in historyBeforeTest }?.forEach { it.delete() }
     }
 
     @Test
@@ -256,8 +262,6 @@ class CompactWorkoutTest {
             scenario.onActivity { it.findViewById<Button>(button).performClick() }
             val summary = instrumentation.waitForMonitorWithTimeout(monitor, 10000)
             assertNotNull("Workout was not saved", summary)
-            summary.intent.getStringExtra(WorkoutSummaryActivity.EXTRA_WORKOUT_FILE)
-                ?.let { savedWorkoutFiles.add(File(it)) }
             instrumentation.runOnMainSync { summary.finish() }
             instrumentation.waitForIdleSync()
         } finally {
