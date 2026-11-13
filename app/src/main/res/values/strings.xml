@@ -89,5 +89,6 @@
     <string name="compact_distance_unit">km</string>
     <string name="compact_focus_metric">%1$s: %2$s %3$s. Tap to show as the main metric.</string>
     <string name="compact_reconnect">Reconnect</string>
+    <string name="compact_connecting_choose_device">Connecting to trainer. Tap to choose another device.</string>
     <string name="compact_disconnected_reconnect">Trainer disconnected. Tap to scan and reconnect.</string>
 </resources>

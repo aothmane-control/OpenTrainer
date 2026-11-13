@@ -159,7 +159,7 @@ internal class CompactWorkoutView(
             context.getString(R.string.workout_preview)
         } else when (connection) {
             ConnectionState.Connected -> context.getString(R.string.connected)
-            ConnectionState.Connecting -> context.getString(R.string.connecting)
+            ConnectionState.Connecting -> context.getString(R.string.compact_connecting_choose_device)
             is ConnectionState.Error -> connection.message
             else -> context.getString(R.string.compact_disconnected_reconnect)
         }

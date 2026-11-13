@@ -374,12 +374,12 @@ class MainActivity : AppCompatActivity() {
             onPause = { togglePauseResumeWorkout() },
             onStop = { stopWorkout() },
             onConnection = {
-                when (bluetoothService.connectionState.value) {
-                    KickrBluetoothService.ConnectionState.Connected ->
-                        Toast.makeText(this, R.string.connected, Toast.LENGTH_SHORT).show()
-                    KickrBluetoothService.ConnectionState.Connecting ->
-                        Toast.makeText(this, R.string.connecting, Toast.LENGTH_SHORT).show()
-                    else -> showCompactReconnectDialog()
+                // While connecting, the picker lets the user switch to another device if the
+                // attempt is stuck: connecting to it replaces the pending connection
+                if (bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected) {
+                    Toast.makeText(this, R.string.connected, Toast.LENGTH_SHORT).show()
+                } else {
+                    showCompactReconnectDialog()
                 }
             },
             isPreview = isWorkoutPreview
