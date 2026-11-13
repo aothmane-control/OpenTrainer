@@ -45,8 +45,12 @@ internal class CompactWorkoutView(
     private val tabs = root.findViewById<TabLayout>(R.id.compactChartTabs)
     private val chartContainer = root.findViewById<FrameLayout>(R.id.compactChartContainer)
     private val charts = listOf(profileChart, powerChart, speedChart)
-    // Each chart is the last child of its classic card. Keep its original sizing when moving it back.
-    private val chartHomes = charts.map { (it.parent as ViewGroup) to it.layoutParams }
+    // Where each chart sits in its classic card, so it goes back to the same place and size
+    private class ChartHome(val parent: ViewGroup, val index: Int, val params: ViewGroup.LayoutParams)
+    private val chartHomes = charts.map {
+        val parent = it.parent as ViewGroup
+        ChartHome(parent, parent.indexOfChild(it), it.layoutParams)
+    }
     private val secondaryColor = MaterialColors.getColor(root, com.google.android.material.R.attr.colorOnSurfaceVariant)
     private var data = TrainerData()
     private var distanceKm = 0.0
@@ -96,9 +100,9 @@ internal class CompactWorkoutView(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
                 ))
             } else {
-                val (parent, params) = chartHomes[index]
+                val home = chartHomes[index]
                 chart.visibility = View.VISIBLE
-                parent.addView(chart, params)
+                home.parent.addView(chart, home.index, home.params)
             }
         }
         selectChart()
