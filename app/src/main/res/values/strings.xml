@@ -50,6 +50,7 @@
     <string name="current_interval_format">Interval %d of %d</string>
     <string name="target_resistance_format">Target: %d%%</string>
     <string name="workout_active">Workout Active</string>
+    <string name="workout_preview">Connected (faked with sample data)</string>
     <string name="workout_interval_format">Interval %1$d of %2$d</string>
     <string name="workout_resistance_format">Target: %1$d%%</string>
     <string name="workout_complete">Workout Complete!</string>
@@ -69,4 +70,25 @@
     <string name="power_watts_hint">Power (watts)</string>
     <string name="power_format_display">%d W</string>
     <string name="workout_power_format">Target: %1$d W</string>
+    <string name="use_compact_workout_layout">Use compact workout layout</string>
+    <string name="compact_layout_hint">Applies to timed resistance and power workouts. GPX routes keep the classic layout.</string>
+    <string name="compact_workout_started">Workout started</string>
+    <string name="compact_workout_remaining">Workout remaining</string>
+    <string name="compact_interval_remaining">Interval: %1$s</string>
+    <string name="compact_next_resistance">Next: %1$d%% resistance</string>
+    <string name="compact_next_power">Next: %1$d W</string>
+    <string name="compact_final_interval">Final interval</string>
+    <string name="compact_profile">Profile</string>
+    <string name="compact_pause">Pause</string>
+    <string name="compact_resume">Resume</string>
+    <string name="compact_stop">Stop</string>
+    <string name="compact_paused">Paused</string>
+    <string name="compact_watts_unit">W</string>
+    <string name="compact_cadence_unit">RPM</string>
+    <string name="compact_speed_unit">km/h</string>
+    <string name="compact_distance_unit">km</string>
+    <string name="compact_focus_metric">%1$s: %2$s %3$s. Tap to show as the main metric.</string>
+    <string name="compact_reconnect">Reconnect</string>
+    <string name="compact_connecting_choose_device">Connecting to trainer. Tap to choose another device.</string>
+    <string name="compact_disconnected_reconnect">Trainer disconnected. Tap to scan and reconnect.</string>
 </resources>

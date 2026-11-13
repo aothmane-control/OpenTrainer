@@ -41,6 +41,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/connectionStatusTextView" />
 
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/compactLayoutCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="@string/use_compact_workout_layout"
+        android:tooltipText="@string/compact_layout_hint"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/scanButton" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/devicesRecyclerView"
         android:layout_width="0dp"
@@ -52,7 +63,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/scanButton"
+        app:layout_constraintTop_toBottomOf="@id/compactLayoutCheckBox"
         tools:listitem="@layout/item_device"
         tools:visibility="visible" />
 
@@ -65,7 +76,7 @@
         app:layout_constraintBottom_toTopOf="@id/setupWorkoutButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/scanButton"
+        app:layout_constraintTop_toBottomOf="@id/compactLayoutCheckBox"
         tools:visibility="visible">
 
         <LinearLayout
@@ -75,6 +86,7 @@
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/workoutStatusCard"
+                android:keepScreenOn="true"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
@@ -484,5 +496,16 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
+
+    <include
+        android:id="@+id/compactWorkoutPanel"
+        layout="@layout/view_compact_workout"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
