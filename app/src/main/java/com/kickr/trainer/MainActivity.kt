@@ -770,12 +770,12 @@ class MainActivity : AppCompatActivity() {
         // Observe connection state
         lifecycleScope.launch {
             bluetoothService.connectionState.collect { state ->
+                connectionStatusTextView.text = state.statusLabel(this@MainActivity)
+                connectionStatusTextView.setTextColor(
+                    ContextCompat.getColor(this@MainActivity, state.statusColorRes())
+                )
                 when (state) {
                     is KickrBluetoothService.ConnectionState.Disconnected -> {
-                        connectionStatusTextView.text = getString(R.string.disconnected)
-                        connectionStatusTextView.setTextColor(
-                            ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
-                        )
                         // A running workout keeps going; keep its controls and cards
                         // so it can still be paused or stopped (and saved)
                         val workoutRunning = activeWorkout != null
@@ -790,19 +790,11 @@ class MainActivity : AppCompatActivity() {
                         dataScrollView.visibility = if (workoutRunning) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connecting -> {
-                        connectionStatusTextView.text = getString(R.string.connecting)
-                        connectionStatusTextView.setTextColor(
-                            ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-                        )
                         devicesRecyclerView.visibility = View.GONE
                         dataScrollView.visibility = if (activeWorkout != null) View.VISIBLE else View.GONE
                     }
                     is KickrBluetoothService.ConnectionState.Connected -> {
                         reconnectDialog?.dismiss()
-                        connectionStatusTextView.text = getString(R.string.connected)
-                        connectionStatusTextView.setTextColor(
-                            ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
-                        )
                         // After a reconnect during a workout, show the workout controls instead
                         // of the setup buttons, so a second workout can't be started on top
                         val workoutRunning = activeWorkout != null
@@ -828,10 +820,6 @@ class MainActivity : AppCompatActivity() {
                         speedDataPoints.clear()
                     }
                     is KickrBluetoothService.ConnectionState.Error -> {
-                        connectionStatusTextView.text = state.message
-                        connectionStatusTextView.setTextColor(
-                            ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
-                        )
                         Toast.makeText(this@MainActivity, state.message, Toast.LENGTH_LONG).show()
                     }
                 }

@@ -169,18 +169,13 @@ internal class CompactWorkoutView(
             ConnectionState.Connecting -> context.getString(R.string.connecting)
             else -> context.getString(R.string.compact_reconnect)
         }
-        connectionButton.setTextColor(ContextCompat.getColor(context, when (connection) {
-            ConnectionState.Connected -> android.R.color.holo_green_dark
-            ConnectionState.Connecting -> android.R.color.holo_blue_dark
-            else -> android.R.color.holo_red_dark
-        }))
+        connectionButton.setTextColor(ContextCompat.getColor(context, connection.statusColorRes()))
         connectionButton.contentDescription = if (isPreview) {
             context.getString(R.string.workout_preview)
         } else when (connection) {
-            ConnectionState.Connected -> context.getString(R.string.connected)
             ConnectionState.Connecting -> context.getString(R.string.compact_connecting_choose_device)
-            is ConnectionState.Error -> connection.message
-            else -> context.getString(R.string.compact_disconnected_reconnect)
+            ConnectionState.Disconnected -> context.getString(R.string.compact_disconnected_reconnect)
+            else -> connection.statusLabel(context)
         }
         connectionButton.tooltipText = connectionButton.contentDescription
     }
