@@ -86,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var compactWorkoutView: CompactWorkoutView
     private var reconnectDialog: AlertDialog? = null
     private var reconnectAdapter: DeviceAdapter? = null
+    // Scan results are listed until the connection state next changes
+    private var showDeviceList = false
     private val isCompactWorkout: Boolean
         get() = compactLayoutCheckBox.isChecked && activeWorkout?.let { it.gpxTrack == null } == true
     private lateinit var powerTextView: TextView
@@ -273,14 +275,9 @@ class MainActivity : AppCompatActivity() {
         connectionStatusTextView.setTextColor(
             ContextCompat.getColor(this, android.R.color.holo_green_dark)
         )
-        listOf(scanButton, disconnectButton, setupWorkoutButton, viewGpxButton,
-            viewHistoryButton, viewMapButton, devicesRecyclerView, mapCard, compactLayoutCheckBox).forEach {
-            it.visibility = View.GONE
-        }
-        listOf(dataScrollView, workoutStatusCard, workoutChartCard,
-            stopWorkoutButton, pauseResumeWorkoutButton).forEach {
-            it.visibility = View.VISIBLE
-        }
+        // Preview layout is explicit and never reads or changes the saved compact preference.
+        val compact = intent.getBooleanExtra("compact", false)
+        applyLayout(linked = true, running = true, gpx = false, compact = compact)
         stopWorkoutButton.isEnabled = false
         pauseResumeWorkoutButton.isEnabled = false
         pauseResumeWorkoutButton.setText(R.string.pause_workout)
@@ -304,12 +301,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateCharts(180, 28f)
 
-        // Preview layout is explicit and never reads or changes the saved compact preference.
-        if (intent.getBooleanExtra("compact", false)) {
-            compactWorkoutView.setVisible(true)
-            listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
-                findViewById<View>(R.id.copyrightTextView), dataScrollView,
-                stopWorkoutButton, pauseResumeWorkoutButton).forEach { it.visibility = View.GONE }
+        if (compact) {
             compactWorkoutView.render(
                 workout, elapsedSeconds, false, TrainerData(power = 180, cadence = 85, speed = 28f),
                 6.25, KickrBluetoothService.ConnectionState.Connected
@@ -380,32 +372,55 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    // Shows the views that fit the connection state, the running workout and the layout choice.
+    // Called whenever one of them changes.
     private fun updateWorkoutLayout() {
         val state = bluetoothService.connectionState.value
-        val wasCompact = compactWorkoutView.isVisible
-        val compact = isCompactWorkout
-        compactWorkoutView.setVisible(compact)
-        // The layout is chosen before a workout starts, whether or not the trainer is connected
-        compactLayoutCheckBox.visibility = if (activeWorkout == null) View.VISIBLE else View.GONE
-        listOf(R.id.toolbar, R.id.connectionStatusTextView, R.id.copyrightTextView).forEach {
-            findViewById<View>(it).visibility = if (compact) View.GONE else View.VISIBLE
-        }
-        if (compact) {
-            listOf(scanButton, devicesRecyclerView, dataScrollView, stopWorkoutButton,
-                pauseResumeWorkoutButton).forEach { it.visibility = View.GONE }
-        } else {
-            if (wasCompact) {
-                scanButton.visibility = if (state is KickrBluetoothService.ConnectionState.Disconnected) {
-                    View.VISIBLE
-                } else View.GONE
-            }
-            if (wasCompact || activeWorkout != null) {
-                dataScrollView.visibility = if (
-                    activeWorkout != null || state is KickrBluetoothService.ConnectionState.Connected
-                ) View.VISIBLE else View.GONE
-            }
-        }
+        val workout = activeWorkout
+        applyLayout(
+            // Error means service discovery failed while the link is still up
+            linked = state is KickrBluetoothService.ConnectionState.Connected ||
+                state is KickrBluetoothService.ConnectionState.Error,
+            running = workout != null,
+            gpx = workout?.gpxTrack != null,
+            compact = isCompactWorkout
+        )
         renderCompactWorkout()
+    }
+
+    // The single place that decides which views are visible. The map card and its button are
+    // set up by the GPX workout itself, and hidden again here when no workout is running.
+    private fun applyLayout(linked: Boolean, running: Boolean, gpx: Boolean, compact: Boolean) {
+        fun View.show(visible: Boolean) {
+            visibility = if (visible) View.VISIBLE else View.GONE
+        }
+        compactWorkoutView.setVisible(compact)
+        val classic = !compact
+        listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
+            findViewById<View>(R.id.copyrightTextView)).forEach { it.show(classic) }
+        // The layout is chosen before a workout starts, whether or not the trainer is connected
+        compactLayoutCheckBox.show(!running)
+        // A running workout keeps going while disconnected, so the user can reconnect
+        // or still pause and stop (and save) it
+        scanButton.show(classic && !linked)
+        updateDeviceListVisibility()
+        disconnectButton.show(linked && !running)
+        setupWorkoutButton.show(linked && !running)
+        viewGpxButton.show(linked && !running)
+        viewHistoryButton.show(!running)
+        stopWorkoutButton.show(classic && running)
+        pauseResumeWorkoutButton.show(classic && running)
+        dataScrollView.show(classic && (running || linked))
+        workoutStatusCard.show(running)
+        workoutChartCard.show(running && !gpx)
+        if (!running) mapCard.show(false)
+    }
+
+    // Compact mode picks devices from the reconnect dialog, so the list stays hidden there
+    private fun updateDeviceListVisibility() {
+        devicesRecyclerView.visibility = if (showDeviceList && !compactWorkoutView.isVisible) {
+            View.VISIBLE
+        } else View.GONE
     }
 
     private fun renderCompactWorkout() {
@@ -747,11 +762,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             bluetoothService.discoveredDevices.collect { devices ->
                 deviceAdapter.updateDevices(devices)
-                // Scans emit often, so only touch the list here. Compact mode picks
-                // devices from the reconnect dialog and keeps the list hidden.
-                devicesRecyclerView.visibility = if (devices.isEmpty() || compactWorkoutView.isVisible) {
-                    View.GONE
-                } else View.VISIBLE
+                // Scans emit often, so only update the list here, not the whole layout
+                showDeviceList = devices.isNotEmpty()
+                updateDeviceListVisibility()
                 reconnectAdapter?.updateDevices(devices)
             }
         }
@@ -763,47 +776,14 @@ class MainActivity : AppCompatActivity() {
                 connectionStatusTextView.setTextColor(
                     ContextCompat.getColor(this@MainActivity, state.statusColorRes())
                 )
+                showDeviceList = false
                 when (state) {
-                    is KickrBluetoothService.ConnectionState.Disconnected -> {
-                        // A running workout keeps going; keep its controls and cards
-                        // so it can still be paused or stopped (and saved)
-                        val workoutRunning = activeWorkout != null
-                        scanButton.visibility = View.VISIBLE
-                        disconnectButton.visibility = View.GONE
-                        setupWorkoutButton.visibility = View.GONE
-                        viewGpxButton.visibility = View.GONE
-                        viewHistoryButton.visibility = if (workoutRunning) View.GONE else View.VISIBLE
-                        stopWorkoutButton.visibility = if (workoutRunning) View.VISIBLE else View.GONE
-                        pauseResumeWorkoutButton.visibility = if (workoutRunning) View.VISIBLE else View.GONE
-                        devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = if (workoutRunning) View.VISIBLE else View.GONE
-                    }
-                    is KickrBluetoothService.ConnectionState.Connecting -> {
-                        devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = if (activeWorkout != null) View.VISIBLE else View.GONE
-                    }
                     is KickrBluetoothService.ConnectionState.Connected -> {
                         reconnectDialog?.dismiss()
-                        // After a reconnect during a workout, show the workout controls instead
-                        // of the setup buttons, so a second workout can't be started on top
-                        val workoutRunning = activeWorkout != null
-                        val idleVisibility = if (workoutRunning) View.GONE else View.VISIBLE
-                        val workoutVisibility = if (workoutRunning) View.VISIBLE else View.GONE
-                        scanButton.visibility = View.GONE
-                        disconnectButton.visibility = idleVisibility
-                        setupWorkoutButton.visibility = idleVisibility
-                        viewGpxButton.visibility = idleVisibility
-                        viewHistoryButton.visibility = idleVisibility
-                        stopWorkoutButton.visibility = workoutVisibility
-                        pauseResumeWorkoutButton.visibility = workoutVisibility
-                        devicesRecyclerView.visibility = View.GONE
-                        dataScrollView.visibility = View.VISIBLE
 
                         // The trainer lost its target while disconnected; resend it on the next tick
                         lastSentTarget = -1
 
-                        Log.d(TAG, "Connected - Setup Workout button visible: ${setupWorkoutButton.visibility == View.VISIBLE}")
-                        
                         startTime = System.currentTimeMillis()
                         powerDataPoints.clear()
                         speedDataPoints.clear()
@@ -811,7 +791,10 @@ class MainActivity : AppCompatActivity() {
                     is KickrBluetoothService.ConnectionState.Error -> {
                         Toast.makeText(this@MainActivity, state.message, Toast.LENGTH_LONG).show()
                     }
+                    else -> Unit
                 }
+                // During a workout (also after a reconnect) this shows the workout controls
+                // instead of the setup buttons, so a second workout can't be started on top
                 updateWorkoutLayout()
             }
         }
@@ -1275,21 +1258,9 @@ class MainActivity : AppCompatActivity() {
         workoutStartTime = System.currentTimeMillis()
         workoutDataPoints.clear()
         
-        // Make cards visible
-        Log.d(TAG, "Making workout cards visible")
-        workoutStatusCard.visibility = View.VISIBLE
-        workoutChartCard.visibility = View.VISIBLE
-        setupWorkoutButton.visibility = View.GONE
-        viewGpxButton.visibility = View.GONE
-        viewHistoryButton.visibility = View.GONE
-        disconnectButton.visibility = View.GONE
-        stopWorkoutButton.visibility = View.VISIBLE
-        pauseResumeWorkoutButton.visibility = View.VISIBLE
+        // The workout cards and controls are shown by updateWorkoutLayout() below
         pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
-        
-        Log.d(TAG, "Workout status card visible: ${workoutStatusCard.visibility == View.VISIBLE}")
-        Log.d(TAG, "Workout chart card visible: ${workoutChartCard.visibility == View.VISIBLE}")
-        
+
         // Scroll to top to show workout cards
         dataScrollView.post {
             dataScrollView.smoothScrollTo(0, 0)
@@ -1536,22 +1507,6 @@ class MainActivity : AppCompatActivity() {
         cumulativeDistance = 0.0
         workoutStartTime = 0
         
-        workoutStatusCard.visibility = View.GONE
-        workoutChartCard.visibility = View.GONE
-        mapCard.visibility = View.GONE
-        // The workout may have been stopped while the trainer was disconnected
-        val connected = bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected
-        val connectedVisibility = if (connected) View.VISIBLE else View.GONE
-        setupWorkoutButton.visibility = connectedVisibility
-        viewGpxButton.visibility = connectedVisibility
-        viewHistoryButton.visibility = View.VISIBLE
-        disconnectButton.visibility = connectedVisibility
-        if (!connected) {
-            dataScrollView.visibility = View.GONE
-        }
-        stopWorkoutButton.visibility = View.GONE
-        pauseResumeWorkoutButton.visibility = View.GONE
-        
         // Reset resistance to 0
         bluetoothService.setResistance(0)
         Log.d(TAG, "Resistance reset to 0%")
@@ -1653,14 +1608,7 @@ class MainActivity : AppCompatActivity() {
         workoutPaused = false
         workoutPausedAtSecond = 0
         
-        // Show workout UI
-        workoutStatusCard.visibility = View.VISIBLE
-        setupWorkoutButton.visibility = View.GONE
-        viewGpxButton.visibility = View.GONE
-        viewHistoryButton.visibility = View.GONE
-        disconnectButton.visibility = View.GONE
-        stopWorkoutButton.visibility = View.VISIBLE
-        pauseResumeWorkoutButton.visibility = View.VISIBLE
+        // The workout cards and controls are shown by updateWorkoutLayout() below
         pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
         viewMapButton.visibility = View.GONE // Hide the external map button
         
