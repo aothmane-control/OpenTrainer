@@ -16,6 +16,7 @@ import com.github.mikephil.charting.charts.LineChart
 import com.google.android.material.tabs.TabLayout
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.GpxTrackPoint
+import java.io.File
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -29,6 +30,7 @@ class CompactWorkoutTest {
     // Same file as MainActivity.getPreferences()
     private val preferences = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
     private var savedCompactPreference: Boolean? = null
+    private val savedWorkoutFiles = mutableListOf<File>()
 
     @Before
     fun rememberCompactPreference() {
@@ -44,6 +46,13 @@ class CompactWorkoutTest {
             val original = savedCompactPreference
             if (original == null) remove(COMPACT_PREFERENCE) else putBoolean(COMPACT_PREFERENCE, original)
         }.commit()
+    }
+
+    // Stopping a workout saves it to the history; don't leave test workouts in the user's history
+    @After
+    fun deleteSavedWorkouts() {
+        savedWorkoutFiles.forEach { it.delete() }
+        savedWorkoutFiles.clear()
     }
 
     @Test
@@ -200,6 +209,8 @@ class CompactWorkoutTest {
             scenario.onActivity { it.findViewById<Button>(button).performClick() }
             val summary = instrumentation.waitForMonitorWithTimeout(monitor, 10000)
             assertNotNull("Workout was not saved", summary)
+            summary.intent.getStringExtra(WorkoutSummaryActivity.EXTRA_WORKOUT_FILE)
+                ?.let { savedWorkoutFiles.add(File(it)) }
             instrumentation.runOnMainSync { summary.finish() }
             instrumentation.waitForIdleSync()
         } finally {
