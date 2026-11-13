@@ -391,9 +391,8 @@ class MainActivity : AppCompatActivity() {
         val wasCompact = compactWorkoutView.isVisible
         val compact = isCompactWorkout
         compactWorkoutView.setVisible(compact)
-        compactLayoutCheckBox.visibility = if (
-            state is KickrBluetoothService.ConnectionState.Disconnected && activeWorkout == null
-        ) View.VISIBLE else View.GONE
+        // The layout is chosen before a workout starts, whether or not the trainer is connected
+        compactLayoutCheckBox.visibility = if (activeWorkout == null) View.VISIBLE else View.GONE
         listOf(R.id.toolbar, R.id.connectionStatusTextView, R.id.copyrightTextView).forEach {
             findViewById<View>(it).visibility = if (compact) View.GONE else View.VISIBLE
         }
