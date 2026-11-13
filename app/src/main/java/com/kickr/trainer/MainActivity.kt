@@ -365,9 +365,12 @@ class MainActivity : AppCompatActivity() {
         setupCharts()
         setupWorkoutProfileChart()
         compactLayoutCheckBox = findViewById(R.id.compactLayoutCheckBox)
-        compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, false)
-        compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
-            getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
+        // Preview picks its layout from the intent and must never touch the saved preference
+        if (!isWorkoutPreview) {
+            compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, false)
+            compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
+                getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
+            }
         }
         compactWorkoutView = CompactWorkoutView(
             findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart,
