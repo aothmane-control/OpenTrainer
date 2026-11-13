@@ -52,6 +52,7 @@ import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
+import com.kickr.trainer.utils.formatWorkoutTime
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -297,8 +298,7 @@ class MainActivity : AppCompatActivity() {
             workout.getCurrentIntervalIndex(elapsedSeconds) + 1, workout.intervals.size)
         workoutResistanceTextView.text = getString(R.string.workout_resistance_format,
             workout.getCurrentInterval(elapsedSeconds)!!.resistance)
-        workoutTimeTextView.text = getString(R.string.workout_time_format,
-            remainingSeconds / 60, remainingSeconds % 60)
+        workoutTimeTextView.text = formatWorkoutTime(remainingSeconds)
         powerTextView.text = getString(R.string.power_format, 180)
         cadenceTextView.text = getString(R.string.cadence_format, 85)
         speedTextView.text = getString(R.string.speed_format, 28f)
@@ -1340,9 +1340,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            val mins = workout.totalDuration / 60
-            val secs = workout.totalDuration % 60
-            workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
+            workoutTimeTextView.text = formatWorkoutTime(workout.totalDuration)
         }
         
         // Start ticker that processes every elapsed (unpaused) second
@@ -1403,10 +1401,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 
-                val remaining = workout.getRemainingTime(workoutElapsedSeconds)
-                val mins = remaining / 60
-                val secs = remaining % 60
-                workoutTimeTextView.text = getString(R.string.workout_time_format, mins, secs)
+                workoutTimeTextView.text = formatWorkoutTime(workout.getRemainingTime(workoutElapsedSeconds))
                 
                 // Update workout profile chart with progress line
                 updateWorkoutProfileProgress(workout, workoutElapsedSeconds)

@@ -51,6 +51,13 @@ data class Workout(
     fun getRemainingTime(elapsedSeconds: Int): Int {
         return (totalDuration - elapsedSeconds).coerceAtLeast(0)
     }
+
+    // Seconds left in the current interval, or 0 when the workout is over
+    fun getIntervalRemainingTime(elapsedSeconds: Int): Int {
+        val index = getCurrentIntervalIndex(elapsedSeconds)
+        if (index < 0) return 0
+        return intervals.take(index + 1).sumOf { it.duration } - elapsedSeconds
+    }
     
     // Get resistance based on distance traveled (for GPX workouts)
     fun getResistanceAtDistance(distanceMeters: Double): Int {

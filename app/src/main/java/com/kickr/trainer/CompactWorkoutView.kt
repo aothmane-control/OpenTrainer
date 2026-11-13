@@ -16,6 +16,7 @@ import com.kickr.trainer.bluetooth.KickrBluetoothService.ConnectionState
 import com.kickr.trainer.model.TrainerData
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutType
+import com.kickr.trainer.utils.formatWorkoutTime
 import java.text.NumberFormat
 
 /** Presentation only: uses the existing charts, timer values, and workout actions. */
@@ -137,7 +138,7 @@ internal class CompactWorkoutView(
         val intervalIndex = workout.getCurrentIntervalIndex(elapsedSeconds)
         val interval = workout.intervals.getOrNull(intervalIndex) ?: return
         val remaining = workout.getRemainingTime(elapsedSeconds)
-        val intervalRemaining = workout.intervals.take(intervalIndex + 1).sumOf { it.duration } - elapsedSeconds
+        val intervalRemaining = workout.getIntervalRemainingTime(elapsedSeconds)
         val typeLabel = if (workout.type == WorkoutType.POWER) R.string.power_mode else R.string.resistance_mode
         workoutTypeText.text = context.getString(
             if (paused) R.string.compact_paused else typeLabel
@@ -145,9 +146,9 @@ internal class CompactWorkoutView(
         intervalText.text = context.getString(
             R.string.workout_interval_format, intervalIndex + 1, workout.intervals.size
         )
-        workoutTimeText.text = time(remaining)
+        workoutTimeText.text = context.formatWorkoutTime(remaining)
         intervalTimeText.text = context.getString(
-            R.string.compact_interval_remaining, time(intervalRemaining)
+            R.string.compact_interval_remaining, context.formatWorkoutTime(intervalRemaining)
         )
         currentTargetText.text = if (workout.type == WorkoutType.POWER) {
             context.getString(R.string.workout_power_format, interval.power)
@@ -228,8 +229,4 @@ internal class CompactWorkoutView(
         maximumFractionDigits = digits
         isGroupingUsed = false
     }
-
-    private fun time(seconds: Int): String = context.getString(
-        R.string.workout_time_format, seconds.coerceAtLeast(0) / 60, seconds.coerceAtLeast(0) % 60
-    )
 }
