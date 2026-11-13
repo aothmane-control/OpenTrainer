@@ -293,19 +293,13 @@ class MainActivity : AppCompatActivity() {
             WorkoutInterval(300, 60), WorkoutInterval(300, 30)
         ))
         val elapsedSeconds = 446
-        val remainingSeconds = workout.getRemainingTime(elapsedSeconds)
-        workoutIntervalTextView.text = getString(R.string.workout_interval_format,
-            workout.getCurrentIntervalIndex(elapsedSeconds) + 1, workout.intervals.size)
-        workoutResistanceTextView.text = getString(R.string.workout_resistance_format,
-            workout.getCurrentInterval(elapsedSeconds)!!.resistance)
-        workoutTimeTextView.text = formatWorkoutTime(remainingSeconds)
+        buildWorkoutProfileChart(workout)
+        renderIntervalProgress(workout, elapsedSeconds)
         powerTextView.text = getString(R.string.power_format, 180)
         cadenceTextView.text = getString(R.string.cadence_format, 85)
         speedTextView.text = getString(R.string.speed_format, 28f)
         distanceTextView.text = getString(R.string.distance_format, 6.25)
 
-        buildWorkoutProfileChart(workout)
-        updateWorkoutProfileProgress(workout, elapsedSeconds)
         startTime = System.currentTimeMillis() - 20_000L
         for (second in 0 until 20) {
             powerDataPoints.add(Entry(second.toFloat(), 180f + (second % 5 - 2) * 8))
@@ -1366,33 +1360,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 lastIntervalIndex = intervalIndex
                 
-                // Update UI
-                workoutIntervalTextView.text = getString(
-                    R.string.workout_interval_format,
-                    intervalIndex,
-                    workout.intervals.size
-                )
-                
-                // Update UI text based on workout type
-                when (workout.type) {
-                    WorkoutType.RESISTANCE -> {
-                        workoutResistanceTextView.text = getString(
-                            R.string.workout_resistance_format,
-                            currentInterval.resistance
-                        )
-                    }
-                    WorkoutType.POWER -> {
-                        workoutResistanceTextView.text = getString(
-                            R.string.workout_power_format,
-                            currentInterval.power
-                        )
-                    }
-                }
-                
-                workoutTimeTextView.text = formatWorkoutTime(workout.getRemainingTime(workoutElapsedSeconds))
-                
-                // Update workout profile chart with progress line
-                updateWorkoutProfileProgress(workout, workoutElapsedSeconds)
+                renderIntervalProgress(workout, workoutElapsedSeconds)
                 
                 // Send command when interval value changes
                 when (workout.type) {
@@ -1418,6 +1386,22 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Workout timer started")
     }
     
+    // Classic workout card for a timed workout: interval, target, remaining time and profile
+    // progress. Shared by the workout ticker and preview mode so both render the same way.
+    private fun renderIntervalProgress(workout: Workout, elapsedSeconds: Int) {
+        val index = workout.getCurrentIntervalIndex(elapsedSeconds)
+        val interval = workout.intervals.getOrNull(index) ?: return
+        workoutIntervalTextView.text = getString(
+            R.string.workout_interval_format, index + 1, workout.intervals.size
+        )
+        workoutResistanceTextView.text = when (workout.type) {
+            WorkoutType.RESISTANCE -> getString(R.string.workout_resistance_format, interval.resistance)
+            WorkoutType.POWER -> getString(R.string.workout_power_format, interval.power)
+        }
+        workoutTimeTextView.text = formatWorkoutTime(workout.getRemainingTime(elapsedSeconds))
+        updateWorkoutProfileProgress(workout, elapsedSeconds)
+    }
+
     private fun buildWorkoutProfileChart(workout: Workout) {
         val entries = mutableListOf<Entry>()
         var accumulatedTime = 0f
