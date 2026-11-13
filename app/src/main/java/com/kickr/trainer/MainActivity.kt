@@ -19,10 +19,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
-import android.view.ViewGroup
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.TextView
@@ -42,7 +40,6 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.google.android.material.card.MaterialCardView
 import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
-import com.kickr.trainer.model.KickrDevice
 import com.kickr.trainer.model.TrainerData
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
@@ -88,7 +85,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var compactLayoutCheckBox: CheckBox
     private lateinit var compactWorkoutView: CompactWorkoutView
     private var reconnectDialog: AlertDialog? = null
-    private var reconnectAdapter: ArrayAdapter<KickrDevice>? = null
+    private var reconnectAdapter: DeviceAdapter? = null
     private val isCompactWorkout: Boolean
         get() = compactLayoutCheckBox.isChecked && activeWorkout?.let { it.gpxTrack == null } == true
     private lateinit var powerTextView: TextView
@@ -422,19 +419,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun showCompactReconnectDialog() {
         if (reconnectDialog != null) return
-        val adapter = object : ArrayAdapter<KickrDevice>(this, android.R.layout.simple_list_item_1,
-            bluetoothService.discoveredDevices.value.toMutableList()) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-                (super.getView(position, convertView, parent) as TextView).apply {
-                    text = getItem(position)?.name
-                }
+        // Same device list and connect action as the classic layout
+        val adapter = DeviceAdapter { device ->
+            bluetoothService.connect(device.device)
+            reconnectDialog?.dismiss()
         }
+        adapter.updateDevices(bluetoothService.discoveredDevices.value)
         reconnectAdapter = adapter
+        val deviceList = RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            this.adapter = adapter
+        }
         reconnectDialog = AlertDialog.Builder(this)
             .setTitle(R.string.scan_for_devices)
-            .setAdapter(adapter) { _, index ->
-                adapter.getItem(index)?.let { bluetoothService.connect(it.device) }
-            }
+            .setView(deviceList)
             .setNegativeButton(R.string.cancel, null)
             .create().also { dialog ->
                 dialog.setOnDismissListener {
@@ -754,10 +752,7 @@ class MainActivity : AppCompatActivity() {
                 devicesRecyclerView.visibility = if (devices.isEmpty() || compactWorkoutView.isVisible) {
                     View.GONE
                 } else View.VISIBLE
-                reconnectAdapter?.apply {
-                    clear()
-                    addAll(devices)
-                }
+                reconnectAdapter?.updateDevices(devices)
             }
         }
 
