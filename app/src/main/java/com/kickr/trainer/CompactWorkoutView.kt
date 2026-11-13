@@ -42,6 +42,16 @@ internal class CompactWorkoutView(
     private val metricButtons = listOf(R.id.compactMetricOne, R.id.compactMetricTwo, R.id.compactMetricThree)
         .map { root.findViewById<Button>(it) }
     private val metrics = Metric.entries.toMutableList()
+    private val workoutTypeText = root.findViewById<TextView>(R.id.compactWorkoutType)
+    private val intervalText = root.findViewById<TextView>(R.id.compactIntervalText)
+    private val workoutTimeText = root.findViewById<TextView>(R.id.compactWorkoutTime)
+    private val intervalTimeText = root.findViewById<TextView>(R.id.compactIntervalTime)
+    private val currentTargetText = root.findViewById<TextView>(R.id.compactCurrentTarget)
+    private val nextTargetText = root.findViewById<TextView>(R.id.compactNextTarget)
+    private val pauseButton = root.findViewById<Button>(R.id.compactPauseButton)
+    private val connectionButton = root.findViewById<Button>(R.id.compactConnectionButton)
+    private val oneDecimal = decimalFormat(1)
+    private val twoDecimals = decimalFormat(2)
     private val tabs = root.findViewById<TabLayout>(R.id.compactChartTabs)
     private val chartContainer = root.findViewById<FrameLayout>(R.id.compactChartContainer)
     private val charts = listOf(profileChart, powerChart, speedChart)
@@ -72,11 +82,11 @@ internal class CompactWorkoutView(
             override fun onTabReselected(tab: TabLayout.Tab) = Unit
         })
         listOf(
-            R.id.compactPauseButton to onPause,
-            R.id.compactStopButton to onStop,
-            R.id.compactConnectionButton to onConnection
-        ).forEach { (id, action) ->
-            root.findViewById<Button>(id).apply {
+            pauseButton to onPause,
+            root.findViewById<Button>(R.id.compactStopButton) to onStop,
+            connectionButton to onConnection
+        ).forEach { (button, action) ->
+            button.apply {
                 isEnabled = !isPreview
                 if (!isPreview) setOnClickListener { action() }
             }
@@ -108,6 +118,13 @@ internal class CompactWorkoutView(
         selectChart()
     }
 
+    /** Updates only the metric values: trainer data arrives several times per second. */
+    fun updateMetrics(trainerData: TrainerData, distanceKm: Double) {
+        this.data = trainerData
+        this.distanceKm = distanceKm
+        renderMetrics()
+    }
+
     fun render(
         workout: Workout,
         elapsedSeconds: Int,
@@ -116,39 +133,36 @@ internal class CompactWorkoutView(
         distanceKm: Double,
         connection: ConnectionState
     ) {
-        this.data = trainerData
-        this.distanceKm = distanceKm
-        renderMetrics()
+        updateMetrics(trainerData, distanceKm)
         val intervalIndex = workout.getCurrentIntervalIndex(elapsedSeconds)
         val interval = workout.intervals.getOrNull(intervalIndex) ?: return
         val remaining = workout.getRemainingTime(elapsedSeconds)
         val intervalRemaining = workout.intervals.take(intervalIndex + 1).sumOf { it.duration } - elapsedSeconds
         val typeLabel = if (workout.type == WorkoutType.POWER) R.string.power_mode else R.string.resistance_mode
-        root.findViewById<TextView>(R.id.compactWorkoutType).text = context.getString(
+        workoutTypeText.text = context.getString(
             if (paused) R.string.compact_paused else typeLabel
         )
-        root.findViewById<TextView>(R.id.compactIntervalText).text = context.getString(
+        intervalText.text = context.getString(
             R.string.workout_interval_format, intervalIndex + 1, workout.intervals.size
         )
-        root.findViewById<TextView>(R.id.compactWorkoutTime).text = time(remaining)
-        root.findViewById<TextView>(R.id.compactIntervalTime).text = context.getString(
+        workoutTimeText.text = time(remaining)
+        intervalTimeText.text = context.getString(
             R.string.compact_interval_remaining, time(intervalRemaining)
         )
-        root.findViewById<TextView>(R.id.compactCurrentTarget).text = if (workout.type == WorkoutType.POWER) {
+        currentTargetText.text = if (workout.type == WorkoutType.POWER) {
             context.getString(R.string.workout_power_format, interval.power)
         } else {
             context.getString(R.string.workout_resistance_format, interval.resistance)
         }
         val next = workout.intervals.getOrNull(intervalIndex + 1)
-        root.findViewById<TextView>(R.id.compactNextTarget).text = when {
+        nextTargetText.text = when {
             next == null -> context.getString(R.string.compact_final_interval)
             workout.type == WorkoutType.POWER -> context.getString(R.string.compact_next_power, next.power)
             else -> context.getString(R.string.compact_next_resistance, next.resistance)
         }
-        root.findViewById<Button>(R.id.compactPauseButton).setText(
+        pauseButton.setText(
             if (paused) R.string.compact_resume else R.string.compact_pause
         )
-        val connectionButton = root.findViewById<Button>(R.id.compactConnectionButton)
         connectionButton.text = when (connection) {
             ConnectionState.Connected -> "●"
             ConnectionState.Connecting -> context.getString(R.string.connecting)
@@ -205,15 +219,15 @@ internal class CompactWorkoutView(
     private fun value(metric: Metric): String = when (metric) {
         Metric.POWER -> data.power.toString()
         Metric.CADENCE -> data.cadence.toString()
-        Metric.SPEED -> decimal(data.speed.toDouble(), 1)
-        Metric.DISTANCE -> decimal(distanceKm, 2)
+        Metric.SPEED -> oneDecimal.format(data.speed.toDouble())
+        Metric.DISTANCE -> twoDecimals.format(distanceKm)
     }
 
-    private fun decimal(value: Double, digits: Int): String = NumberFormat.getNumberInstance().apply {
+    private fun decimalFormat(digits: Int): NumberFormat = NumberFormat.getNumberInstance().apply {
         minimumFractionDigits = digits
         maximumFractionDigits = digits
         isGroupingUsed = false
-    }.format(value)
+    }
 
     private fun time(seconds: Int): String = context.getString(
         R.string.workout_time_format, seconds.coerceAtLeast(0) / 60, seconds.coerceAtLeast(0) % 60

@@ -854,7 +854,10 @@ class MainActivity : AppCompatActivity() {
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
-                renderCompactWorkout()
+                // The timer and interval text are refreshed by the workout ticker
+                if (compactWorkoutView.isVisible) {
+                    compactWorkoutView.updateMetrics(data, cumulativeDistance / 1000.0)
+                }
 
                 // Workout data is recorded once per workout second by the workout timer
             }
