@@ -755,12 +755,15 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             bluetoothService.discoveredDevices.collect { devices ->
                 deviceAdapter.updateDevices(devices)
-                devicesRecyclerView.visibility = if (devices.isEmpty()) View.GONE else View.VISIBLE
+                // Scans emit often, so only touch the list here. Compact mode picks
+                // devices from the reconnect dialog and keeps the list hidden.
+                devicesRecyclerView.visibility = if (devices.isEmpty() || compactWorkoutView.isVisible) {
+                    View.GONE
+                } else View.VISIBLE
                 reconnectAdapter?.apply {
                     clear()
                     addAll(devices)
                 }
-                updateWorkoutLayout()
             }
         }
 
