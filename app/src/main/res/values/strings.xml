@@ -43,6 +43,10 @@
     <string name="cancel">Cancel</string>
     <string name="delete_interval">Delete interval</string>
     <string name="setup_workout">Setup Workout</string>
+    <string name="workout">Workout</string>
+    <string name="no_workouts_available">No workouts available</string>
+    <string name="saved_workout_unavailable">This workout is no longer available to start</string>
+    <string name="invalid_workout">Invalid workout configuration</string>
     <string name="stop_workout">Stop Workout</string>
     <string name="pause_workout">Pause Workout</string>
     <string name="resume_workout">Resume Workout</string>

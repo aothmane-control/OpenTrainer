@@ -39,6 +39,8 @@ import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import com.google.android.material.textfield.TextInputLayout
 import com.kickr.trainer.adapter.DeviceAdapter
 import com.kickr.trainer.bluetooth.KickrBluetoothService
 import com.kickr.trainer.model.TrainerData
@@ -49,6 +51,7 @@ import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
+import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
 import kotlinx.coroutines.launch
@@ -76,6 +79,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scanButton: Button
     private lateinit var disconnectButton: Button
     private lateinit var setupWorkoutButton: Button
+    private lateinit var workoutLauncher: View
+    private lateinit var savedWorkoutLayout: TextInputLayout
+    private lateinit var savedWorkoutSelector: MaterialAutoCompleteTextView
+    private lateinit var startSavedWorkoutButton: Button
+    private var selectedWorkoutName: String? = null
+    private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
     private lateinit var pauseResumeWorkoutButton: Button
@@ -180,8 +189,13 @@ class MainActivity : AppCompatActivity() {
                     val intervals = durations.indices.map { i ->
                         WorkoutInterval(durations[i], resistances.getOrElse(i) { 0 }, powers.getOrElse(i) { 0 })
                     }
-                    activeWorkout = Workout(durationSeconds, intervals, workoutType)
-                    startWorkout()
+                    val workout = Workout(durationSeconds, intervals, workoutType)
+                    if (workout.isValid()) {
+                        activeWorkout = workout
+                        startWorkout(data.getStringExtra("workout_name"))
+                    } else {
+                        Toast.makeText(this, R.string.invalid_workout, Toast.LENGTH_SHORT).show()
+                    }
                 } else {
                     Log.e(TAG, "No intervals received!")
                     Toast.makeText(this@MainActivity, "Failed to create workout", Toast.LENGTH_SHORT).show()
@@ -316,6 +330,10 @@ class MainActivity : AppCompatActivity() {
         scanButton = findViewById(R.id.scanButton)
         disconnectButton = findViewById(R.id.disconnectButton)
         setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
+        workoutLauncher = findViewById(R.id.workoutLauncher)
+        savedWorkoutLayout = findViewById(R.id.savedWorkoutLayout)
+        savedWorkoutSelector = findViewById(R.id.savedWorkoutSelector)
+        startSavedWorkoutButton = findViewById(R.id.startSavedWorkoutButton)
         viewGpxButton = findViewById(R.id.viewGpxButton)
         stopWorkoutButton = findViewById(R.id.stopWorkoutButton)
         pauseResumeWorkoutButton = findViewById(R.id.pauseResumeWorkoutButton)
@@ -408,7 +426,7 @@ class MainActivity : AppCompatActivity() {
         scanButton.show(classic && !linked)
         updateDeviceListVisibility()
         disconnectButton.show(linked && !running)
-        setupWorkoutButton.show(linked && !running)
+        workoutLauncher.show(linked && !running)
         viewGpxButton.show(linked && !running)
         viewHistoryButton.show(!running)
         stopWorkoutButton.show(classic && running)
@@ -917,6 +935,21 @@ class MainActivity : AppCompatActivity() {
             bluetoothService.disconnect()
         }
         
+        savedWorkoutSelector.setOnItemClickListener { parent, _, position, _ ->
+            selectedWorkoutName = parent.getItemAtPosition(position) as String
+        }
+        startSavedWorkoutButton.setOnClickListener {
+            val name = selectedWorkoutName ?: return@setOnClickListener
+            if (activeWorkout != null) return@setOnClickListener
+            val workout = savedWorkoutStorage.loadStartable()[name]
+            if (workout == null) {
+                refreshSavedWorkouts()
+                Toast.makeText(this, R.string.saved_workout_unavailable, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            activeWorkout = workout
+            startWorkout(name)
+        }
         setupWorkoutButton.setOnClickListener {
             Log.d(TAG, "Setup Workout button clicked")
             val intent = Intent(this, WorkoutSetupActivity::class.java)
@@ -1245,8 +1278,9 @@ class MainActivity : AppCompatActivity() {
         workoutTicker = null
     }
 
-    private fun startWorkout() {
+    private fun startWorkout(savedName: String? = null) {
         val workout = activeWorkout ?: return
+        if (savedWorkoutStorage.rememberStarted(savedName, workout)) selectedWorkoutName = savedName
         
         Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
         Toast.makeText(this, if (isCompactWorkout) {
@@ -1747,9 +1781,21 @@ class MainActivity : AppCompatActivity() {
         bluetoothService.startScan()
     }
 
+    private fun refreshSavedWorkouts() {
+        val workouts = savedWorkoutStorage.loadStartable()
+        selectedWorkoutName = selectedWorkoutName?.takeIf { it in workouts }
+            ?: savedWorkoutStorage.lastStartedName?.takeIf { it in workouts }
+            ?: workouts.keys.firstOrNull()
+        savedWorkoutSelector.setSimpleItems(workouts.keys.toTypedArray())
+        savedWorkoutSelector.setText(selectedWorkoutName ?: getString(R.string.no_workouts_available), false)
+        savedWorkoutLayout.isEnabled = workouts.isNotEmpty()
+        startSavedWorkoutButton.isEnabled = workouts.isNotEmpty()
+    }
+
     override fun onResume() {
         super.onResume()
         mapView.onResume()
+        if (!isWorkoutPreview) refreshSavedWorkouts()
     }
     
     override fun onPause() {
