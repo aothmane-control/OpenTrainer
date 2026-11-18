@@ -127,6 +127,7 @@ class MainActivity : AppCompatActivity() {
     private val maxDataPoints = 200 // 20 seconds at ~10Hz
     
     private var activeWorkout: Workout? = null
+    private var activeWorkoutName: String? = null // Name shown in history for non-GPX workouts
     private val workoutHandler = Handler(Looper.getMainLooper())
     private var workoutTicker: Runnable? = null
     private var workoutActiveMillis = 0L // Unpaused time accumulated before the current segment
@@ -1280,6 +1281,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startWorkout(savedName: String? = null) {
         val workout = activeWorkout ?: return
+        activeWorkoutName = savedName?.takeIf { it.isNotBlank() }
         if (savedWorkoutStorage.rememberStarted(savedName, workout)) selectedWorkoutName = savedName
         
         Log.d(TAG, "Starting workout: ${workout.intervals.size} intervals, ${workout.totalDuration}s total")
@@ -1538,6 +1540,7 @@ class MainActivity : AppCompatActivity() {
         stopWorkoutTicker()
         val wasActive = activeWorkout != null
         activeWorkout = null
+        activeWorkoutName = null
         workoutElapsedSeconds = 0
         workoutPaused = false
         workoutPausedAtSecond = 0
@@ -1579,11 +1582,7 @@ class MainActivity : AppCompatActivity() {
                 workout?.type == WorkoutType.POWER -> "POWER"
                 else -> "RESISTANCE"
             }
-            val workoutName = if (workout?.gpxTrack != null) {
-                workout.gpxTrack!!.name
-            } else {
-                "Custom Workout"
-            }
+            val workoutName = workout?.gpxTrack?.name ?: activeWorkoutName ?: "Custom Workout"
             
             val history = WorkoutHistory(
                 startTime = workoutStartTime,

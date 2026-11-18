@@ -19,6 +19,7 @@ import com.github.mikephil.charting.charts.LineChart
 import com.google.android.material.tabs.TabLayout
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.GpxTrackPoint
+import com.kickr.trainer.utils.WorkoutStorageManager
 import java.io.File
 import org.junit.After
 import org.junit.Assert.*
@@ -185,6 +186,22 @@ class CompactWorkoutTest {
     }
 
     @Test
+    fun historyUsesTheStartedWorkoutName() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = false }
+            for ((name, expected) in listOf("Hill repeats" to "Hill repeats", " " to "Custom Workout",
+                null to "Custom Workout")) {
+                startIntervals(scenario, name = name)
+                stopWorkout(scenario, R.id.stopWorkoutButton)
+                // History files are named by start second, so check and remove each one before the next run
+                val saved = historyDirectory.listFiles()!!.filter { it.name !in historyBeforeTest }.single()
+                assertEquals(expected, WorkoutStorageManager(context).loadWorkoutHistory(saved)!!.workoutName)
+                saved.delete()
+            }
+        }
+    }
+
+    @Test
     fun compactReconnectDialogScansUntilCancelled() {
         val bluetooth = context.getSystemService(BluetoothManager::class.java)?.adapter
         assumeTrue("Needs Bluetooth turned on", bluetooth?.isEnabled == true)
@@ -227,8 +244,11 @@ class CompactWorkoutTest {
         permissions.forEach { instrumentation.uiAutomation.grantRuntimePermission(context.packageName, it) }
     }
 
-    private fun startIntervals(scenario: ActivityScenario<MainActivity>, power: Boolean = false) {
+    private fun startIntervals(
+        scenario: ActivityScenario<MainActivity>, power: Boolean = false, name: String? = null
+    ) {
         val result = Intent()
+            .putExtra("workout_name", name)
             .putExtra("workout_duration", 1200)
             .putExtra("workout_type", if (power) "POWER" else "RESISTANCE")
             .putExtra("workout_interval_durations", intArrayOf(300, 300, 300, 300))
