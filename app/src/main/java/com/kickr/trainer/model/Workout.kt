@@ -23,12 +23,13 @@ data class Workout(
     val gpxTrack: GpxTrack? = null  // Optional GPX track for elevation-based workouts
 ) {
     fun isValid(): Boolean {
-        val sumDuration = intervals.sumOf { it.duration }
+        if (totalDuration <= 0 || intervals.isEmpty() || intervals.any { it.duration <= 0 }) return false
+        val sumDuration = intervals.sumOf { it.duration.toLong() }
         val valueCheck = when (type) {
             WorkoutType.RESISTANCE -> intervals.all { it.resistance in 0..100 }
             WorkoutType.POWER -> intervals.all { it.power > 0 && it.power <= 1000 }
         }
-        return sumDuration == totalDuration && valueCheck
+        return sumDuration == totalDuration.toLong() && valueCheck
     }
     
     fun getCurrentInterval(elapsedSeconds: Int): WorkoutInterval? {

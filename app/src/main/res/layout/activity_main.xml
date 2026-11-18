@@ -73,7 +73,7 @@
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
         android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/setupWorkoutButton"
+        app:layout_constraintBottom_toTopOf="@id/workoutLauncher"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/compactLayoutCheckBox"
@@ -399,31 +399,94 @@
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
-    <Button
-        android:id="@+id/setupWorkoutButton"
+    <LinearLayout
+        android:id="@+id/workoutLauncher"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="@string/setup_workout"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:baselineAligned="false"
         android:visibility="gone"
-        app:layout_constraintEnd_toStartOf="@id/viewGpxButton"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/dataScrollView"
-        app:layout_constraintBottom_toTopOf="@id/viewHistoryButton"
-        tools:visibility="visible" />
-    
+        app:layout_constraintBottom_toTopOf="@id/viewGpxButton"
+        tools:visibility="visible">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/savedWorkoutLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/workout"
+            app:boxCornerRadiusTopStart="24dp"
+            app:boxCornerRadiusTopEnd="24dp"
+            app:boxCornerRadiusBottomStart="24dp"
+            app:boxCornerRadiusBottomEnd="24dp"
+            app:endIconMinSize="48dp">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/savedWorkoutSelector"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:inputType="none"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:saveEnabled="false"
+                android:importantForAutofill="no"
+                android:textSize="16sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <Button
+            android:id="@+id/startSavedWorkoutButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:layout_marginStart="8dp"
+            android:padding="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="▶"
+            android:textSize="20sp"
+            android:contentDescription="@string/start_workout"
+            android:tooltipText="@string/start_workout" />
+
+        <Button
+            android:id="@+id/setupWorkoutButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:layout_marginStart="8dp"
+            android:padding="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="+"
+            android:textSize="26sp"
+            android:contentDescription="@string/create_workout"
+            android:tooltipText="@string/create_workout" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/viewGpxButton"
         style="@style/Widget.Material3.Button.OutlinedButton"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
         android:layout_marginTop="8dp"
         android:text="View GPX"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/setupWorkoutButton"
-        app:layout_constraintTop_toBottomOf="@id/dataScrollView"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/workoutLauncher"
         app:layout_constraintBottom_toTopOf="@id/viewHistoryButton"
         tools:visibility="visible" />
     
@@ -468,7 +531,7 @@
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/setupWorkoutButton"
+        app:layout_constraintTop_toBottomOf="@id/viewGpxButton"
         app:layout_constraintBottom_toTopOf="@id/disconnectButton"
         tools:visibility="visible" />
 

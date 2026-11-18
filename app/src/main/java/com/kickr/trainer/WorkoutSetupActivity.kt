@@ -5,7 +5,6 @@
 
 package com.kickr.trainer
 
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
@@ -24,9 +23,8 @@ import com.kickr.trainer.adapter.IntervalAdapter
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
+import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
-import org.json.JSONArray
-import org.json.JSONObject
 import kotlin.math.roundToInt
 
 class WorkoutSetupActivity : AppCompatActivity() {
@@ -52,9 +50,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     private var totalDurationSeconds = 0
     private var workoutType = WorkoutType.RESISTANCE
     
-    private val prefs by lazy {
-        getSharedPreferences("workout_prefs", Context.MODE_PRIVATE)
-    }
+    private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -333,6 +329,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
         val intent = Intent()
         intent.putExtra("workout_duration", workout.totalDuration)
         intent.putExtra("workout_type", workoutType.name)
+        intent.putExtra("workout_name", workoutNameEditText.text.toString().trim())
         
         // Convert intervals to arrays for Intent
         val durations = workout.intervals.map { it.duration }.toIntArray()
@@ -358,47 +355,17 @@ class WorkoutSetupActivity : AppCompatActivity() {
             return
         }
         
-        // Create workout JSON
-        val workoutJson = JSONObject()
-        workoutJson.put("totalDurationSeconds", totalDurationSeconds)
-        workoutJson.put("type", workoutType.name)
-        
-        val intervalsArray = JSONArray()
-        intervals.forEach { interval ->
-            val intervalJson = JSONObject()
-            intervalJson.put("duration", interval.duration)
-            intervalJson.put("resistance", interval.resistance)
-            intervalJson.put("power", interval.power)
-            intervalsArray.put(intervalJson)
+        try {
+            savedWorkoutStorage.save(workoutName, Workout(totalDurationSeconds, intervals.toList(), workoutType))
+            Toast.makeText(this, "Workout '$workoutName' saved!", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to save workout: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-        workoutJson.put("intervals", intervalsArray)
-        
-        // Get existing workouts
-        val workoutsJson = prefs.getString("workouts", null)
-        val workoutsMap = if (workoutsJson != null) {
-            JSONObject(workoutsJson)
-        } else {
-            JSONObject()
-        }
-        
-        // Add or update workout
-        workoutsMap.put(workoutName, workoutJson)
-        
-        // Save back to preferences
-        prefs.edit().putString("workouts", workoutsMap.toString()).apply()
-        Toast.makeText(this, "Workout '$workoutName' saved!", Toast.LENGTH_SHORT).show()
     }
     
     private fun loadWorkout() {
-        val workoutsJson = prefs.getString("workouts", null)
-        if (workoutsJson == null) {
-            Toast.makeText(this, "No saved workouts found", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
         try {
-            val workoutsMap = JSONObject(workoutsJson)
-            val workoutNames = workoutsMap.keys().asSequence().toList().sorted()
+            val workoutNames = savedWorkoutStorage.names()
             
             if (workoutNames.isEmpty()) {
                 Toast.makeText(this, "No saved workouts found", Toast.LENGTH_SHORT).show()
@@ -410,7 +377,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 .setTitle("Select Workout")
                 .setItems(workoutNames.toTypedArray()) { _, which ->
                     val selectedName = workoutNames[which]
-                    showWorkoutOptionsDialog(selectedName, workoutsMap)
+                    showWorkoutOptionsDialog(selectedName)
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
@@ -419,12 +386,12 @@ class WorkoutSetupActivity : AppCompatActivity() {
         }
     }
     
-    private fun showWorkoutOptionsDialog(name: String, workoutsMap: JSONObject) {
+    private fun showWorkoutOptionsDialog(name: String) {
         AlertDialog.Builder(this)
             .setTitle(name)
             .setItems(arrayOf("Load", "Delete")) { _, which ->
                 when (which) {
-                    0 -> loadWorkoutByName(name, workoutsMap.getJSONObject(name))
+                    0 -> loadWorkoutByName(name)
                     1 -> confirmDeleteWorkout(name)
                 }
             }
@@ -445,32 +412,19 @@ class WorkoutSetupActivity : AppCompatActivity() {
     
     private fun deleteWorkout(name: String) {
         try {
-            val workoutsJson = prefs.getString("workouts", null) ?: return
-            val workoutsMap = JSONObject(workoutsJson)
-            
-            workoutsMap.remove(name)
-            
-            prefs.edit().putString("workouts", workoutsMap.toString()).apply()
+            savedWorkoutStorage.delete(name)
             Toast.makeText(this, "Workout '$name' deleted!", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to delete workout: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
     
-    private fun loadWorkoutByName(name: String, json: JSONObject) {
+    private fun loadWorkoutByName(name: String) {
         try {
-            // Set workout name
+            val workout = savedWorkoutStorage.load(name)
             workoutNameEditText.setText(name)
-            
-            totalDurationSeconds = json.getInt("totalDurationSeconds")
-            
-            // Load workout type if present (defaults to RESISTANCE for backwards compatibility)
-            val typeString = json.optString("type", "RESISTANCE")
-            workoutType = try {
-                WorkoutType.valueOf(typeString)
-            } catch (e: Exception) {
-                WorkoutType.RESISTANCE
-            }
+            totalDurationSeconds = workout.totalDuration
+            workoutType = workout.type
             
             // Update UI for workout type
             when (workoutType) {
@@ -488,14 +442,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
             
             // Load intervals
             intervals.clear()
-            val intervalsArray = json.getJSONArray("intervals")
-            for (i in 0 until intervalsArray.length()) {
-                val intervalJson = intervalsArray.getJSONObject(i)
-                val duration = intervalJson.getInt("duration")
-                val resistance = intervalJson.optInt("resistance", 0)
-                val power = intervalJson.optInt("power", 0)
-                intervals.add(WorkoutInterval(duration, resistance, power))
-            }
+            intervals.addAll(workout.intervals)
             
             intervalAdapter.updateIntervals(intervals)
             updateRemainingTime()
