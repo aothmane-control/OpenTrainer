@@ -109,7 +109,7 @@ class WorkoutPreviewTest {
     private fun assertCommonPreview(activity: MainActivity) {
         assertNull(activity.supportActionBar?.subtitle)
         for (id in listOf(R.id.scanButton, R.id.workoutLauncher, R.id.disconnectButton,
-            R.id.viewGpxButton, R.id.viewHistoryButton, R.id.compactLayoutCheckBox)) {
+            R.id.viewGpxButton, R.id.compactLayoutCheckBox)) {
             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
         }
         for (id in listOf(R.id.powerChart, R.id.speedChart, R.id.workoutProfileChart)) {

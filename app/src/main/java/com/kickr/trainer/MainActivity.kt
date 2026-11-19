@@ -88,7 +88,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
     private lateinit var pauseResumeWorkoutButton: Button
-    private lateinit var viewHistoryButton: Button
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
     private lateinit var dataScrollView: NestedScrollView
@@ -338,7 +337,6 @@ class MainActivity : AppCompatActivity() {
         viewGpxButton = findViewById(R.id.viewGpxButton)
         stopWorkoutButton = findViewById(R.id.stopWorkoutButton)
         pauseResumeWorkoutButton = findViewById(R.id.pauseResumeWorkoutButton)
-        viewHistoryButton = findViewById(R.id.viewHistoryButton)
         connectionStatusTextView = findViewById(R.id.connectionStatusTextView)
         devicesRecyclerView = findViewById(R.id.devicesRecyclerView)
         dataScrollView = findViewById(R.id.dataScrollView)
@@ -429,7 +427,8 @@ class MainActivity : AppCompatActivity() {
         disconnectButton.show(linked && !running)
         workoutLauncher.show(linked && !running)
         viewGpxButton.show(linked && !running)
-        viewHistoryButton.show(!running)
+        // History is in the overflow menu, hidden during a workout
+        invalidateOptionsMenu()
         stopWorkoutButton.show(classic && running)
         pauseResumeWorkoutButton.show(classic && running)
         dataScrollView.show(classic && (running || linked))
@@ -968,11 +967,6 @@ class MainActivity : AppCompatActivity() {
         viewGpxButton.setOnClickListener {
             val intent = Intent(this, GpxMapActivity::class.java)
             gpxMapLauncher.launch(intent)
-        }
-        
-        viewHistoryButton.setOnClickListener {
-            val intent = Intent(this, WorkoutHistoryActivity::class.java)
-            startActivity(intent)
         }
         
         viewMapButton.setOnClickListener {
@@ -1828,8 +1822,17 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(R.id.action_view_history)?.isVisible = activeWorkout == null
+        return super.onPrepareOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_view_history -> {
+                startActivity(Intent(this, WorkoutHistoryActivity::class.java))
+                true
+            }
             R.id.action_about -> {
                 showAboutDialog()
                 true
