@@ -62,6 +62,7 @@
     <string name="resistance_profile">Resistance Profile</string>
     <string name="power_profile">Power Profile</string>
     <string name="grade_profile">Grade Profile</string>
+    <string name="grade_format">Grade: %.1f%%</string>
     <string name="grade_not_recorded">Grade Profile: not recorded for this ride</string>
     <string name="total_duration">Total Duration (minutes)</string>
     <string name="duration_minutes">Duration (min)</string>

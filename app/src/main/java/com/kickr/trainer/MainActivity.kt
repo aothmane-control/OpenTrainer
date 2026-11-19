@@ -944,12 +944,9 @@ class MainActivity : AppCompatActivity() {
     private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData, grade: Double? = null) {
         if (activeWorkout == null || workoutStartTime == 0L) return
 
+        // GPX rides control the trainer by grade, which is recorded instead of a resistance level
         val currentResistance = activeWorkout?.let { workout ->
-            if (workout.gpxTrack != null) {
-                workout.getResistanceAtDistance(cumulativeDistance)
-            } else {
-                workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
-            }
+            if (workout.gpxTrack != null) 0 else workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
         } ?: 0
         val targetPower = activeWorkout?.let { workout ->
             if (workout.gpxTrack == null && workout.type == WorkoutType.POWER) {
@@ -1722,7 +1719,8 @@ class MainActivity : AppCompatActivity() {
         // Create a workout with the GPX track
         activeWorkout = Workout(
             totalDuration = estimatedDurationSeconds,
-            intervals = listOf(WorkoutInterval(estimatedDurationSeconds, 50)), // Dummy interval
+            // Only carries the estimated duration; the trainer follows the route's grade
+            intervals = listOf(WorkoutInterval(estimatedDurationSeconds, 0)),
             gpxTrack = gpxTrack
         )
         
@@ -1752,9 +1750,9 @@ class MainActivity : AppCompatActivity() {
         // Update workout info
         workoutIntervalTextView.text = "GPX: ${gpxTrack.name}"
         workoutTimeTextView.text = String.format("%.2f / %.2f km", 0.0, gpxTrack.totalDistance / 1000)
-        workoutResistanceTextView.text = "Resistance: 50%"
+        workoutResistanceTextView.text = getString(R.string.grade_format, gpxTrack.getGradientAtDistance(0.0))
         
-        Toast.makeText(this, "GPX workout started! Resistance based on elevation", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "GPX workout started! The trainer follows the route's grade", Toast.LENGTH_LONG).show()
         
         // Start workout ticker; the workout ends once the route is complete
         startWorkoutTicker { secondsDelta ->
@@ -1796,10 +1794,7 @@ class MainActivity : AppCompatActivity() {
             cumulativeDistance / 1000, 
             gpxTrack.totalDistance / 1000
         )
-        workoutResistanceTextView.text = String.format(
-            "Grade: %.1f%%", 
-            gradient
-        )
+        workoutResistanceTextView.text = getString(R.string.grade_format, gradient)
         
         // Send simulation parameters to trainer with actual gradient
         // This gives more realistic feel than resistance mapping
