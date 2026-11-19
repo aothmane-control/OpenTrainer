@@ -65,6 +65,8 @@
                         android:id="@+id/riderWeightInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:digits="0123456789.,"
+                        android:imeOptions="actionNext"
                         android:inputType="numberDecimal" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
@@ -103,6 +105,8 @@
                         android:id="@+id/bikeWeightInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:digits="0123456789.,"
+                        android:imeOptions="actionNext"
                         android:inputType="numberDecimal" />
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -119,6 +123,8 @@
                         android:id="@+id/wheelCircumferenceInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:digits="0123456789.,"
+                        android:imeOptions="actionNext"
                         android:inputType="numberDecimal" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
@@ -156,6 +162,8 @@
                         android:id="@+id/rollingResistanceInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:digits="0123456789.,"
+                        android:imeOptions="actionNext"
                         android:inputType="numberDecimal" />
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -172,6 +180,8 @@
                         android:id="@+id/windResistanceInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:digits="0123456789.,"
+                        android:imeOptions="actionNext"
                         android:inputType="numberDecimal" />
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -188,6 +198,8 @@
                         android:id="@+id/windSpeedInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:digits="0123456789.,-"
+                        android:imeOptions="actionDone"
                         android:inputType="numberDecimal|numberSigned" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
