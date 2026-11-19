@@ -939,8 +939,9 @@ class MainActivity : AppCompatActivity() {
     }
     
     // Called once per (unpaused) workout second, so averages are time-weighted
-    // and independent of how often the trainer sends notifications
-    private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData) {
+    // and independent of how often the trainer sends notifications.
+    // GPX rides pass the grade sent to the trainer in that second.
+    private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData, grade: Double? = null) {
         if (activeWorkout == null || workoutStartTime == 0L) return
 
         val currentResistance = activeWorkout?.let { workout ->
@@ -967,7 +968,8 @@ class MainActivity : AppCompatActivity() {
             heartRate = data.heartRate,
             resistance = currentResistance,
             distance = cumulativeDistance,
-            targetPower = targetPower
+            targetPower = targetPower,
+            grade = grade
         )
         
         workoutDataPoints.add(dataPoint)
@@ -1778,10 +1780,11 @@ class MainActivity : AppCompatActivity() {
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
 
-        recordWorkoutData(bluetoothService.trainerData.value)
-
         // Get gradient at current position on track
         val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
+
+        // Record the same grade that is sent to the trainer below
+        recordWorkoutData(bluetoothService.trainerData.value, gradient)
         
         // Update map position
         updateMapPosition(cumulativeDistance)

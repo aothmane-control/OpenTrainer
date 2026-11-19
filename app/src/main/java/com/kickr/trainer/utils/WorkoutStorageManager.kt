@@ -65,6 +65,7 @@ class WorkoutStorageManager(private val context: Context) {
                         put("resistance", point.resistance)
                         put("distance", point.distance)
                         put("targetPower", point.targetPower)
+                        point.grade?.let { put("grade", it) }
                     }
                     dataPointsArray.put(pointJson)
                 }
@@ -102,7 +103,9 @@ class WorkoutStorageManager(private val context: Context) {
                     heartRate = pointJson.getInt("heartRate"),
                     resistance = pointJson.getInt("resistance"),
                     distance = pointJson.getDouble("distance"),
-                    targetPower = pointJson.optInt("targetPower", 0) // Absent in older files
+                    targetPower = pointJson.optInt("targetPower", 0), // Absent in older files
+                    // Only GPX rides record a grade, and only since it was added
+                    grade = if (pointJson.has("grade")) pointJson.getDouble("grade") else null
                 ))
             }
             
