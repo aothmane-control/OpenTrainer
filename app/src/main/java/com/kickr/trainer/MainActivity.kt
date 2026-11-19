@@ -39,6 +39,7 @@ import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
+import com.github.mikephil.charting.formatter.ValueFormatter
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
@@ -49,8 +50,11 @@ import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
 import com.kickr.trainer.model.GpxTrack
+import com.kickr.trainer.model.GradeProfile
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
+import kotlin.math.ceil
+import kotlin.math.floor
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.RiderBikeSettingsStorage
@@ -118,6 +122,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewMapButton: Button
     private lateinit var workoutProfileChart: LineChart
     private lateinit var workoutProfileTitleTextView: TextView
+    // GPX rides: the route's grade profile, built once per ride
+    private var gradeProfileDataSet: LineDataSet? = null
     private lateinit var mapView: MapView
     private lateinit var mapCard: MaterialCardView
     private var currentPositionMarker: Marker? = null
@@ -299,7 +305,7 @@ class MainActivity : AppCompatActivity() {
         )
         // Preview layout is explicit and never reads or changes the saved compact preference.
         val compact = intent.getBooleanExtra("compact", false)
-        applyLayout(linked = true, running = true, gpx = false, compact = compact)
+        applyLayout(linked = true, running = true, compact = compact)
         stopWorkoutButton.isEnabled = false
         pauseResumeWorkoutButton.isEnabled = false
         pauseResumeWorkoutButton.setText(R.string.pause_workout)
@@ -409,7 +415,6 @@ class MainActivity : AppCompatActivity() {
             linked = state is KickrBluetoothService.ConnectionState.Connected ||
                 state is KickrBluetoothService.ConnectionState.Error,
             running = workout != null,
-            gpx = workout?.gpxTrack != null,
             compact = isCompactWorkout,
             compactConnected = compactLayoutCheckBox.isChecked && workout == null &&
                 state is KickrBluetoothService.ConnectionState.Connected
@@ -422,7 +427,7 @@ class MainActivity : AppCompatActivity() {
     // compactConnected: connected without a workout, the compact panel shows only live metrics
     // in place of the classic metric cards, between the setup controls.
     private fun applyLayout(
-        linked: Boolean, running: Boolean, gpx: Boolean, compact: Boolean,
+        linked: Boolean, running: Boolean, compact: Boolean,
         compactConnected: Boolean = false
     ) {
         fun View.show(visible: Boolean) {
@@ -449,7 +454,8 @@ class MainActivity : AppCompatActivity() {
         pauseResumeWorkoutButton.show(classic && running)
         dataScrollView.show(classic && (running || linked) && !compactConnected)
         workoutStatusCard.show(running)
-        workoutChartCard.show(running && !gpx)
+        // Timed workouts show their target profile, GPX rides the route's grade
+        workoutChartCard.show(running)
         if (!running) mapCard.show(false)
     }
 
@@ -561,6 +567,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    // X axis labels of the profile chart: elapsed time for timed workouts, distance for GPX rides
+    private val elapsedTimeFormatter = object : ValueFormatter() {
+        override fun getFormattedValue(value: Float): String {
+            val mins = (value / 60).toInt()
+            val secs = (value % 60).toInt()
+            return "%d:%02d".format(mins, secs)
+        }
+    }
+    private val distanceKmFormatter = object : ValueFormatter() {
+        override fun getFormattedValue(value: Float) = "%.1f km".format(value)
+    }
+
     private fun setupWorkoutProfileChart() {
         workoutProfileChart.apply {
             description.isEnabled = false
@@ -593,13 +611,7 @@ class MainActivity : AppCompatActivity() {
                 position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 granularity = 30f
                 setDrawLabels(true)
-                valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
-                    override fun getFormattedValue(value: Float): String {
-                        val mins = (value / 60).toInt()
-                        val secs = (value % 60).toInt()
-                        return "%d:%02d".format(mins, secs)
-                    }
-                }
+                valueFormatter = elapsedTimeFormatter
             }
         }
     }
@@ -1471,16 +1483,7 @@ class MainActivity : AppCompatActivity() {
             WorkoutType.POWER -> R.string.power_profile
         })
         
-        val dataSet = LineDataSet(entries, label).apply {
-            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-            lineWidth = 3f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(true)
-            fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
-            fillAlpha = 50
-        }
+        val dataSet = profileLineDataSet(entries, label)
         
         // Calculate max value and set Y-axis to 110% of max
         val maxValue = when (workout.type) {
@@ -1490,7 +1493,13 @@ class MainActivity : AppCompatActivity() {
         val yMax = maxValue * 1.1f
         
         workoutProfileChart.data = LineData(dataSet)
-        workoutProfileChart.xAxis.axisMaximum = workout.totalDuration.toFloat()
+        // The chart may have shown a GPX ride's distances before
+        workoutProfileChart.xAxis.apply {
+            valueFormatter = elapsedTimeFormatter
+            granularity = 30f
+            axisMinimum = 0f
+            axisMaximum = workout.totalDuration.toFloat()
+        }
         workoutProfileChart.axisLeft.apply {
             axisMinimum = 0f
             axisMaximum = yMax
@@ -1522,16 +1531,7 @@ class MainActivity : AppCompatActivity() {
             WorkoutType.POWER -> "Target Power (W)"
         }
         
-        val profileDataSet = LineDataSet(entries, label).apply {
-            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-            lineWidth = 3f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(true)
-            fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
-            fillAlpha = 50
-        }
+        val profileDataSet = profileLineDataSet(entries, label)
         
         // Calculate max value and set Y-axis to 110% of max
         val maxValue = when (workout.type) {
@@ -1541,19 +1541,8 @@ class MainActivity : AppCompatActivity() {
         val yMax = maxValue * 1.1f
         
         // Add progress indicator line
-        val progressEntries = listOf(
-            Entry(elapsedSeconds.toFloat(), 0f),
-            Entry(elapsedSeconds.toFloat(), yMax)
-        )
         
-        val progressDataSet = LineDataSet(progressEntries, "Current Position").apply {
-            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
-            lineWidth = 3f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            enableDashedLine(10f, 5f, 0f)
-        }
+        val progressDataSet = positionLineDataSet(elapsedSeconds.toFloat(), 0f, yMax)
         
         workoutProfileChart.data = LineData(profileDataSet, progressDataSet)
         workoutProfileChart.axisLeft.apply {
@@ -1567,6 +1556,66 @@ class MainActivity : AppCompatActivity() {
         workoutProfileChart.invalidate()
     }
     
+    // Target or grade along the workout, shared by timed workouts and GPX rides
+    private fun profileLineDataSet(entries: List<Entry>, label: String) = LineDataSet(entries, label).apply {
+        color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
+        lineWidth = 3f
+        setDrawCircles(false)
+        setDrawValues(false)
+        mode = LineDataSet.Mode.LINEAR
+        setDrawFilled(true)
+        fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
+        fillAlpha = 50
+    }
+
+    // Dashed vertical line where the rider is now
+    private fun positionLineDataSet(x: Float, yMin: Float, yMax: Float) =
+        LineDataSet(listOf(Entry(x, yMin), Entry(x, yMax)), "Current Position").apply {
+            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
+            lineWidth = 3f
+            setDrawCircles(false)
+            setDrawValues(false)
+            mode = LineDataSet.Mode.LINEAR
+            enableDashedLine(10f, 5f, 0f)
+        }
+
+    // GPX rides: the grade sent to the trainer along the route, over distance in km
+    private fun buildGradeProfileChart(track: GpxTrack) {
+        val samples = GradeProfile.sample(track)
+        gradeProfileDataSet = profileLineDataSet(
+            samples.map { (distance, grade) -> Entry((distance / 1000).toFloat(), grade.toFloat()) },
+            "Grade (%)"
+        )
+        workoutProfileTitleTextView.setText(R.string.grade_profile)
+        // Whole percent with a margin, always including 0 %
+        val grades = samples.map { it.second }
+        workoutProfileChart.axisLeft.apply {
+            axisMinimum = floor(minOf(0.0, grades.minOrNull() ?: 0.0)).toFloat() - 1f
+            axisMaximum = ceil(maxOf(0.0, grades.maxOrNull() ?: 0.0)).toFloat() + 1f
+            granularity = 1f
+            setLabelCount(6, false)
+        }
+        workoutProfileChart.xAxis.apply {
+            valueFormatter = distanceKmFormatter
+            granularity = 0.1f
+        }
+        updateGradeProfileProgress(track, 0.0)
+    }
+
+    private fun updateGradeProfileProgress(track: GpxTrack, distanceMeters: Double) {
+        val profile = gradeProfileDataSet ?: return
+        val visible = GradeProfile.visibleRange(distanceMeters, track.totalDistance)
+        workoutProfileChart.xAxis.apply {
+            axisMinimum = (visible.start / 1000).toFloat()
+            axisMaximum = (visible.endInclusive / 1000).toFloat()
+        }
+        val yAxis = workoutProfileChart.axisLeft
+        val position = positionLineDataSet((distanceMeters / 1000).toFloat(), yAxis.axisMinimum, yAxis.axisMaximum)
+        workoutProfileChart.data = LineData(profile, position)
+        workoutProfileChart.notifyDataSetChanged()
+        workoutProfileChart.invalidate()
+    }
+
     private fun stopWorkout() {
         Log.d(TAG, "Stopping workout")
         
@@ -1696,6 +1745,7 @@ class MainActivity : AppCompatActivity() {
             // Continue without map
             mapCard.visibility = View.GONE
         }
+        buildGradeProfileChart(gpxTrack)
         
         // Update workout info
         workoutIntervalTextView.text = "GPX: ${gpxTrack.name}"
@@ -1735,6 +1785,7 @@ class MainActivity : AppCompatActivity() {
         
         // Update map position
         updateMapPosition(cumulativeDistance)
+        updateGradeProfileProgress(gpxTrack, cumulativeDistance)
         
         // Update UI
         workoutTimeTextView.text = String.format(
