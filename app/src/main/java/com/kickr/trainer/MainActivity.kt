@@ -53,6 +53,7 @@ import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
+import com.kickr.trainer.utils.RiderBikeSettingsStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
 import kotlinx.coroutines.launch
@@ -147,6 +148,7 @@ class MainActivity : AppCompatActivity() {
     private var workoutStartTime: Long = 0
     private val workoutDataPoints = mutableListOf<WorkoutDataPoint>()
     private lateinit var workoutStorageManager: WorkoutStorageManager
+    private lateinit var riderBikeSettingsStorage: RiderBikeSettingsStorage
 
     private val requestBluetoothPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -249,6 +251,7 @@ class MainActivity : AppCompatActivity() {
 
         bluetoothService = KickrBluetoothService(this)
         workoutStorageManager = WorkoutStorageManager(this)
+        riderBikeSettingsStorage = RiderBikeSettingsStorage(this)
         
         // Initialize sound effects for workout notifications
         try {
@@ -1746,11 +1749,12 @@ class MainActivity : AppCompatActivity() {
         
         // Send simulation parameters to trainer with actual gradient
         // This gives more realistic feel than resistance mapping
+        val settings = bluetoothService.riderBikeSettings
         bluetoothService.setSimulationParameters(
-            windSpeedMps = 0.0,      // No wind simulation
+            windSpeedMps = settings.windSpeedMps,
             gradePercent = gradient,  // Use actual track gradient
-            crr = 0.004,             // Standard rolling resistance
-            cw = 0.51                // Standard wind resistance
+            crr = settings.rollingResistance,
+            cw = settings.windResistance
         )
         
         Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h, gradient=%.1f%%".format(
@@ -1829,7 +1833,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
-        if (!isWorkoutPreview) refreshSavedWorkouts()
+        if (!isWorkoutPreview) {
+            refreshSavedWorkouts()
+            // They may have been changed on the rider and bike settings screen
+            bluetoothService.applyRiderBikeSettings(riderBikeSettingsStorage.load())
+        }
     }
     
     override fun onPause() {

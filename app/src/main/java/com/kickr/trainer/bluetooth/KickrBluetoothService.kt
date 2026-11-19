@@ -19,6 +19,7 @@ import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import com.kickr.trainer.model.KickrDevice
+import com.kickr.trainer.model.RiderBikeSettings
 import com.kickr.trainer.model.TrainerData
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.roundToInt
 
 @SuppressLint("MissingPermission")
 class KickrBluetoothService(private val context: Context) {
@@ -71,6 +73,9 @@ class KickrBluetoothService(private val context: Context) {
     val controlPointResponses: SharedFlow<ControlPointResponse> = _controlPointResponses.asSharedFlow()
     private val _machineStatus = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
     val machineStatus: SharedFlow<ByteArray> = _machineStatus.asSharedFlow()
+    // The rider and bike the trainer simulates with, sent on every connection
+    @Volatile var riderBikeSettings = RiderBikeSettings.DEFAULT
+        private set
     // Whether the rider weight the trainer simulates with can be written (User Data Service)
     val hasWeightCharacteristic: Boolean
         get() = bluetoothGatt?.getService(GattAttributes.USER_DATA_SERVICE)
@@ -533,14 +538,25 @@ class KickrBluetoothService(private val context: Context) {
         }
     }
 
-    private fun setWheelCircumference(circumferenceMm: Float) {
+    // Changed settings reach the trainer right away when connected, otherwise on the next connection
+    fun applyRiderBikeSettings(settings: RiderBikeSettings) {
+        val previous = riderBikeSettings
+        if (settings == previous) return
+        riderBikeSettings = settings
+        if (ftmsControlPointCharacteristic == null) return
+        if (settings.wheelCircumferenceMm != previous.wheelCircumferenceMm) {
+            setWheelCircumference(settings.wheelCircumferenceMm)
+        }
+    }
+
+    private fun setWheelCircumference(circumferenceMm: Double) {
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS SET WHEEL CIRCUMFERENCE")
         Log.d(TAG, "Setting wheel circumference to ${circumferenceMm}mm")
 
         // FTMS Set Wheel Circumference (opcode 0x12)
         // Parameter: UINT16 in 0.1mm resolution
-        val circumference01mm = (circumferenceMm * 10).toInt()
+        val circumference01mm = (circumferenceMm * 10).roundToInt()
         sendControlPointCommand(byteArrayOf(
             0x12.toByte(), // Opcode: Set Wheel Circumference
             (circumference01mm and 0xFF).toByte(),
@@ -684,8 +700,8 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Queued FTMS Control Point indications")
                 }
                 
-                // Set wheel circumference for proper speed calculation (2100mm = 700c road bike)
-                setWheelCircumference(2100.0f)
+                // Set wheel circumference for proper speed calculation
+                setWheelCircumference(riderBikeSettings.wheelCircumferenceMm)
                 
                 // Send Start/Resume command to ensure trainer is in active mode
                 sendStartCommand()
