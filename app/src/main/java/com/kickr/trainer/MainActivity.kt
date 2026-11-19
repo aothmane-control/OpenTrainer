@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var isWorkoutPreview = false
+    private val isDebuggable get() = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     private lateinit var bluetoothService: KickrBluetoothService
     private lateinit var deviceAdapter: DeviceAdapter
     
@@ -239,8 +240,7 @@ class MainActivity : AppCompatActivity() {
         val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
 
-        isWorkoutPreview = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
-            intent.getBooleanExtra("preview", false)
+        isWorkoutPreview = isDebuggable && intent.getBooleanExtra("preview", false)
         if (isWorkoutPreview) {
             initViews()
             showWorkoutPreview()
@@ -1857,6 +1857,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         menu.findItem(R.id.action_view_history)?.isVisible = activeWorkout == null
+        menu.findItem(R.id.action_simulation_check)?.isVisible = isDebuggable && !isWorkoutPreview &&
+            activeWorkout == null &&
+            bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -1866,11 +1869,28 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, WorkoutHistoryActivity::class.java))
                 true
             }
+            R.id.action_simulation_check -> {
+                runSimulationCheck()
+                true
+            }
             R.id.action_about -> {
                 showAboutDialog()
                 true
             }
             else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    // Debug builds: whether the trainer supports simulation mode, see SimulationCheck
+    private fun runSimulationCheck() {
+        Toast.makeText(this, "Checking simulation mode…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val report = SimulationCheck.run(bluetoothService)
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("Simulation mode")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show()
         }
     }
 

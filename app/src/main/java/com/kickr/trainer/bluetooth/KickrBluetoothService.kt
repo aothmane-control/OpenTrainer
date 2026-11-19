@@ -20,8 +20,11 @@ import android.os.ParcelUuid
 import android.util.Log
 import com.kickr.trainer.model.KickrDevice
 import com.kickr.trainer.model.TrainerData
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -60,6 +63,18 @@ class KickrBluetoothService(private val context: Context) {
     @Volatile private var resistanceRange = ResistanceRange.DEFAULT
     val minResistanceLevel get() = resistanceRange.minLevel
     val maxResistanceLevel get() = resistanceRange.maxLevel
+    // What the trainer says it supports, read once per connection (null until read)
+    @Volatile var features: FitnessMachineFeatures? = null
+        private set
+    // The trainer's replies to control point commands and its Fitness Machine Status messages
+    private val _controlPointResponses = MutableSharedFlow<ControlPointResponse>(extraBufferCapacity = 16)
+    val controlPointResponses: SharedFlow<ControlPointResponse> = _controlPointResponses.asSharedFlow()
+    private val _machineStatus = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    val machineStatus: SharedFlow<ByteArray> = _machineStatus.asSharedFlow()
+    // Whether the rider weight the trainer simulates with can be written (User Data Service)
+    val hasWeightCharacteristic: Boolean
+        get() = bluetoothGatt?.getService(GattAttributes.USER_DATA_SERVICE)
+            ?.getCharacteristic(GattAttributes.WEIGHT) != null
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     private val commandHandler = Handler(Looper.getMainLooper())
@@ -84,6 +99,17 @@ class KickrBluetoothService(private val context: Context) {
     private val gattOperationQueue = ArrayDeque<GattOperation>()
     private var gattOperationInProgress = false
     
+    data class ControlPointResponse(val requestOpcode: Int, val resultCode: Int) {
+        val resultName get() = when (resultCode) {
+            0x01 -> "Success"
+            0x02 -> "Op Code Not Supported"
+            0x03 -> "Invalid Parameter"
+            0x04 -> "Operation Failed"
+            0x05 -> "Control Not Permitted"
+            else -> "Unknown"
+        }
+    }
+
     sealed class ConnectionState {
         object Disconnected : ConnectionState()
         object Connecting : ConnectionState()
@@ -198,19 +224,17 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "   Response bytes: $hexString")
                     // Response format: 0x80 (Response Code), request opcode, result code
                     if (value.size >= 3 && (value[0].toInt() and 0xFF) == 0x80) {
-                        val requestOpcode = value[1].toInt() and 0xFF
-                        val resultCode = value[2].toInt() and 0xFF
-                        val result = when (resultCode) {
-                            0x01 -> "Success"
-                            0x02 -> "Op Code Not Supported"
-                            0x03 -> "Invalid Parameter"
-                            0x04 -> "Operation Failed"
-                            0x05 -> "Control Not Permitted"
-                            else -> "Unknown"
-                        }
-                        val message = "   Response to opcode 0x%02X: 0x%02X (%s)".format(requestOpcode, resultCode, result)
-                        if (resultCode == 0x01) Log.d(TAG, message) else Log.w(TAG, message)
+                        val response = ControlPointResponse(value[1].toInt() and 0xFF, value[2].toInt() and 0xFF)
+                        val message = "   Response to opcode 0x%02X: 0x%02X (%s)".format(
+                            response.requestOpcode, response.resultCode, response.resultName
+                        )
+                        if (response.resultCode == 0x01) Log.d(TAG, message) else Log.w(TAG, message)
+                        _controlPointResponses.tryEmit(response)
                     }
+                }
+                GattAttributes.FITNESS_MACHINE_STATUS -> {
+                    Log.d(TAG, "→ Fitness Machine Status: ${value.joinToString(" ") { "0x%02X".format(it) }}")
+                    _machineStatus.tryEmit(value)
                 }
                 else -> {
                     Log.d(TAG, "→ Unknown characteristic: ${characteristic.uuid}")
@@ -238,6 +262,10 @@ class KickrBluetoothService(private val context: Context) {
             value: ByteArray,
             status: Int
         ) {
+            if (characteristic.uuid == GattAttributes.FITNESS_MACHINE_FEATURE) {
+                features = if (status == BluetoothGatt.GATT_SUCCESS) FitnessMachineFeatures.parse(value) else null
+                Log.d(TAG, "Fitness machine features (status=$status): $features")
+            }
             if (characteristic.uuid == GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE) {
                 val range = if (status == BluetoothGatt.GATT_SUCCESS) ResistanceRange.parse(value) else null
                 if (range != null) {
@@ -433,6 +461,7 @@ class KickrBluetoothService(private val context: Context) {
     private fun resetConnectionState() {
         ftmsControlPointCharacteristic = null
         resistanceRange = ResistanceRange.DEFAULT
+        features = null
         clearGattOperations()
         currentPower = 0
         currentCadence = 0
@@ -613,6 +642,10 @@ class KickrBluetoothService(private val context: Context) {
         gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
             Log.d(TAG, "Found Fitness Machine Service")
 
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_FEATURE)?.let { characteristic ->
+                enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
+            } ?: Log.w(TAG, "Fitness Machine Feature characteristic NOT found")
+
             // Read the trainer's resistance range first, so it is known before any resistance command
             service.getCharacteristic(GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE)?.let { characteristic ->
                 enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
@@ -629,6 +662,16 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Queued FTMS Indoor Bike Data notifications")
                 }
             } ?: Log.w(TAG, "FTMS Indoor Bike Data characteristic NOT found")
+
+            // Status messages, e.g. the simulation parameters the trainer actually applied
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_STATUS)?.let { characteristic ->
+                gatt.setCharacteristicNotification(characteristic, true)
+                characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
+                    enqueueGattOperation(GattOperation.WriteDescriptor(
+                        descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    ))
+                }
+            }
             
             // Enable Control Point notifications to receive responses from resistance commands
             service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->

@@ -5,6 +5,12 @@
         android:id="@+id/action_view_history"
         android:title="View History"
         app:showAsAction="never" />
+    <!-- Debug builds only, while connected -->
+    <item
+        android:id="@+id/action_simulation_check"
+        android:title="Check simulation mode"
+        android:visible="false"
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_about"
         android:title="About"
