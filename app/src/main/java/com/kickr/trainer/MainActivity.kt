@@ -776,6 +776,12 @@ class MainActivity : AppCompatActivity() {
                     )
                 } else {
                     scanButton.text = getString(R.string.scan_for_devices)
+                    // Replace "Scanning…" with the current connection status
+                    val state = bluetoothService.connectionState.value
+                    connectionStatusTextView.text = state.statusLabel(this@MainActivity)
+                    connectionStatusTextView.setTextColor(
+                        ContextCompat.getColor(this@MainActivity, state.statusColorRes())
+                    )
                 }
             }
         }
