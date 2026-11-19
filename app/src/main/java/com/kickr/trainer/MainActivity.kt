@@ -29,6 +29,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.core.widget.NestedScrollView
 import androidx.lifecycle.lifecycleScope
@@ -134,6 +135,7 @@ class MainActivity : AppCompatActivity() {
     private var lastSentTarget = -1 // Last resistance (%) or power (W) sent to the trainer; -1 forces a resend
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
+    private val currentDistanceKm: Double get() = cumulativeDistance / 1000.0
     private var workoutPaused = false
     private var workoutPausedAtSecond = 0
     private var soundPool: SoundPool? = null
@@ -373,6 +375,8 @@ class MainActivity : AppCompatActivity() {
             compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, false)
             compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
                 getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
+                // The connected screen also follows the layout choice
+                updateWorkoutLayout()
             }
         }
         compactWorkoutView = CompactWorkoutView(
@@ -403,18 +407,27 @@ class MainActivity : AppCompatActivity() {
                 state is KickrBluetoothService.ConnectionState.Error,
             running = workout != null,
             gpx = workout?.gpxTrack != null,
-            compact = isCompactWorkout
+            compact = isCompactWorkout,
+            compactConnected = compactLayoutCheckBox.isChecked && workout == null &&
+                state is KickrBluetoothService.ConnectionState.Connected
         )
         renderCompactWorkout()
     }
 
     // The single place that decides which views are visible. The map card and its button are
     // set up by the GPX workout itself, and hidden again here when no workout is running.
-    private fun applyLayout(linked: Boolean, running: Boolean, gpx: Boolean, compact: Boolean) {
+    // compactConnected: connected without a workout, the compact panel shows only live metrics
+    // in place of the classic metric cards, between the setup controls.
+    private fun applyLayout(
+        linked: Boolean, running: Boolean, gpx: Boolean, compact: Boolean,
+        compactConnected: Boolean = false
+    ) {
         fun View.show(visible: Boolean) {
             visibility = if (visible) View.VISIBLE else View.GONE
         }
-        compactWorkoutView.setVisible(compact)
+        placeCompactPanel(inline = compactConnected)
+        compactWorkoutView.setWorkoutMode(compact)
+        compactWorkoutView.setVisible(compact || compactConnected)
         val classic = !compact
         listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
             findViewById<View>(R.id.copyrightTextView)).forEach { it.show(classic) }
@@ -431,25 +444,43 @@ class MainActivity : AppCompatActivity() {
         invalidateOptionsMenu()
         stopWorkoutButton.show(classic && running)
         pauseResumeWorkoutButton.show(classic && running)
-        dataScrollView.show(classic && (running || linked))
+        dataScrollView.show(classic && (running || linked) && !compactConnected)
         workoutStatusCard.show(running)
         workoutChartCard.show(running && !gpx)
         if (!running) mapCard.show(false)
     }
 
-    // Compact mode picks devices from the reconnect dialog, so the list stays hidden there
+    // The workout fills the screen; when just connected the panel takes the place of the
+    // classic metric cards, so the workout launcher below it follows the panel instead
+    private fun placeCompactPanel(inline: Boolean) {
+        val panel = compactWorkoutView.root
+        val params = panel.layoutParams as ConstraintLayout.LayoutParams
+        val unset = ConstraintLayout.LayoutParams.UNSET
+        val parent = ConstraintLayout.LayoutParams.PARENT_ID
+        params.topToTop = if (inline) unset else parent
+        params.topToBottom = if (inline) R.id.compactLayoutCheckBox else unset
+        params.bottomToBottom = if (inline) unset else parent
+        params.bottomToTop = if (inline) R.id.workoutLauncher else unset
+        panel.layoutParams = params
+        val launcherParams = workoutLauncher.layoutParams as ConstraintLayout.LayoutParams
+        launcherParams.topToBottom = if (inline) R.id.compactWorkoutPanel else R.id.dataScrollView
+        workoutLauncher.layoutParams = launcherParams
+    }
+
+    // Compact mode picks devices from the device picker dialog, so the list stays hidden there
     private fun updateDeviceListVisibility() {
-        devicesRecyclerView.visibility = if (showDeviceList && !compactWorkoutView.isVisible) {
+        devicesRecyclerView.visibility = if (showDeviceList && !compactLayoutCheckBox.isChecked) {
             View.VISIBLE
         } else View.GONE
     }
 
     private fun renderCompactWorkout() {
         if (!compactWorkoutView.isVisible) return
-        val workout = activeWorkout ?: return
+        val data = bluetoothService.trainerData.value
+        val workout = activeWorkout ?: return compactWorkoutView.updateMetrics(data, currentDistanceKm)
         compactWorkoutView.render(
-            workout, workoutElapsedSeconds, workoutPaused, bluetoothService.trainerData.value,
-            cumulativeDistance / 1000.0, bluetoothService.connectionState.value
+            workout, workoutElapsedSeconds, workoutPaused, data,
+            currentDistanceKm, bluetoothService.connectionState.value
         )
     }
 
@@ -835,15 +866,14 @@ class MainActivity : AppCompatActivity() {
                 
                 // Update distance display if workout is active
                 if (activeWorkout != null) {
-                    val distanceKm = cumulativeDistance / 1000.0
-                    distanceTextView.text = getString(R.string.distance_format, distanceKm)
+                    distanceTextView.text = getString(R.string.distance_format, currentDistanceKm)
                 }
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
                 // The timer and interval text are refreshed by the workout ticker
                 if (compactWorkoutView.isVisible) {
-                    compactWorkoutView.updateMetrics(data, cumulativeDistance / 1000.0)
+                    compactWorkoutView.updateMetrics(data, currentDistanceKm)
                 }
 
                 // Workout data is recorded once per workout second by the workout timer
@@ -932,6 +962,9 @@ class MainActivity : AppCompatActivity() {
         scanButton.setOnClickListener {
             if (bluetoothService.isScanning.value) {
                 bluetoothService.stopScan()
+            } else if (compactLayoutCheckBox.isChecked) {
+                // Same picker the compact workout uses for reconnecting; it starts the scan
+                showCompactReconnectDialog()
             } else {
                 checkPermissionsAndScan()
             }

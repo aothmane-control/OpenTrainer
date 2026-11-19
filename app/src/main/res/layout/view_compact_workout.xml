@@ -24,6 +24,7 @@
             android:orientation="vertical">
 
             <LinearLayout
+                android:id="@+id/compactHeaderRow"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:gravity="center_vertical"
@@ -58,6 +59,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/compactTimeCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="72dp"

@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.text.buildSpannedString
 import androidx.core.text.color
 import androidx.core.text.scale
+import androidx.core.view.isVisible
 import com.github.mikephil.charting.charts.LineChart
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.tabs.TabLayout
@@ -51,6 +52,10 @@ internal class CompactWorkoutView(
     private val nextTargetText = root.findViewById<TextView>(R.id.compactNextTarget)
     private val pauseButton = root.findViewById<Button>(R.id.compactPauseButton)
     private val connectionButton = root.findViewById<Button>(R.id.compactConnectionButton)
+    // Shown only during a workout; while just connected the panel shows live metrics only
+    private val workoutOnlyViews = listOf(
+        R.id.compactHeaderRow, R.id.compactTimeCard, R.id.compactCurrentTarget, R.id.compactWorkoutControls
+    ).map { root.findViewById<View>(it) }
     private val oneDecimal = decimalFormat(1)
     private val twoDecimals = decimalFormat(2)
     private val tabs = root.findViewById<TabLayout>(R.id.compactChartTabs)
@@ -66,7 +71,7 @@ internal class CompactWorkoutView(
     private var data = TrainerData()
     private var distanceKm = 0.0
 
-    val isVisible: Boolean get() = root.visibility == View.VISIBLE
+    val isVisible: Boolean get() = root.isVisible
 
     init {
         metricButtons.forEachIndexed { index, button ->
@@ -101,9 +106,18 @@ internal class CompactWorkoutView(
         renderMetrics()
     }
 
+    /** Without a workout there is no timer, target or profile, only live trainer metrics. */
+    fun setWorkoutMode(workout: Boolean) {
+        workoutOnlyViews.forEach { it.isVisible = workout }
+        root.keepScreenOn = workout
+        tabs.getTabAt(0)?.view?.isVisible = workout
+        if (!workout && tabs.selectedTabPosition == 0) tabs.getTabAt(1)?.select()
+        selectChart()
+    }
+
     fun setVisible(visible: Boolean) {
         if (isVisible == visible) return
-        root.visibility = if (visible) View.VISIBLE else View.GONE
+        root.isVisible = visible
         charts.forEachIndexed { index, chart ->
             (chart.parent as ViewGroup).removeView(chart)
             if (visible) {
@@ -112,7 +126,7 @@ internal class CompactWorkoutView(
                 ))
             } else {
                 val home = chartHomes[index]
-                chart.visibility = View.VISIBLE
+                chart.isVisible = true
                 home.parent.addView(chart, home.index, home.params)
             }
         }
@@ -183,7 +197,7 @@ internal class CompactWorkoutView(
     private fun selectChart() {
         if (!isVisible) return
         charts.forEachIndexed { index, chart ->
-            chart.visibility = if (index == tabs.selectedTabPosition) View.VISIBLE else View.GONE
+            chart.isVisible = index == tabs.selectedTabPosition
         }
     }
 
