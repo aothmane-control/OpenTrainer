@@ -24,7 +24,8 @@ class WorkoutTest {
 
     @Test
     fun validatesTargetsForTheSelectedWorkoutType() {
-        assertFalse(Workout(60, listOf(WorkoutInterval(60, 101))).isValid())
+        assertFalse(Workout(60, listOf(WorkoutInterval(60, -1))).isValid())
+        assertTrue("Trainers can have more than 100 levels", Workout(60, listOf(WorkoutInterval(60, 150))).isValid())
         assertFalse(Workout(60, listOf(WorkoutInterval(60, 0, 0)), WorkoutType.POWER).isValid())
         assertFalse(Workout(60, listOf(WorkoutInterval(60, 0, 1001)), WorkoutType.POWER).isValid())
         assertTrue(Workout(60, listOf(WorkoutInterval(60, 0, 200)), WorkoutType.POWER).isValid())

@@ -6,13 +6,13 @@
 package com.kickr.trainer.model
 
 enum class WorkoutType {
-    RESISTANCE,  // Resistance-based (0-100%)
+    RESISTANCE,  // Resistance-based (trainer-specific levels)
     POWER        // Power-based (watts)
 }
 
 data class WorkoutInterval(
     val duration: Int,        // Duration in seconds
-    val resistance: Int,      // Resistance percentage (0-100) - used when type is RESISTANCE
+    val resistance: Int,      // Resistance level of the trainer (0 = its minimum) - used when type is RESISTANCE
     val power: Int = 0        // Target power in watts - used when type is POWER
 )
 
@@ -26,7 +26,8 @@ data class Workout(
         if (totalDuration <= 0 || intervals.isEmpty() || intervals.any { it.duration <= 0 }) return false
         val sumDuration = intervals.sumOf { it.duration.toLong() }
         val valueCheck = when (type) {
-            WorkoutType.RESISTANCE -> intervals.all { it.resistance in 0..100 }
+            // The upper limit depends on the trainer, which clamps levels to its own range
+            WorkoutType.RESISTANCE -> intervals.all { it.resistance >= 0 }
             WorkoutType.POWER -> intervals.all { it.power > 0 && it.power <= 1000 }
         }
         return sumDuration == totalDuration.toLong() && valueCheck

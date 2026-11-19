@@ -56,14 +56,19 @@ class KickrBluetoothService(private val context: Context) {
     private var currentHeartRate = 0
     
     private var ftmsControlPointCharacteristic: BluetoothGattCharacteristic? = null
+    // Written from the GATT callback thread, read when sending resistance commands
+    @Volatile private var resistanceRange = ResistanceRange.DEFAULT
+    val maxResistanceLevel get() = resistanceRange.maxLevel
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     private val commandHandler = Handler(Looper.getMainLooper())
     private var deferredCommand: Runnable? = null
 
-    // Android allows only one outstanding GATT operation at a time. Writes are queued
+    // Android allows only one outstanding GATT operation at a time. Operations are queued
     // and the next one is started from the matching completion callback.
     private sealed class GattOperation {
+        class ReadCharacteristic(val characteristic: BluetoothGattCharacteristic) : GattOperation()
+
         class WriteCharacteristic(
             val characteristic: BluetoothGattCharacteristic,
             val value: ByteArray
@@ -226,6 +231,37 @@ class KickrBluetoothService(private val context: Context) {
             }
         }
 
+        override fun onCharacteristicRead(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+            status: Int
+        ) {
+            if (characteristic.uuid == GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE) {
+                val range = if (status == BluetoothGatt.GATT_SUCCESS) ResistanceRange.parse(value) else null
+                if (range != null) {
+                    resistanceRange = range
+                    Log.d(TAG, "Supported resistance level range: $range")
+                } else {
+                    Log.w(TAG, "Unusable resistance level range (status=$status), keeping levels 0-100")
+                }
+            }
+            completeGattOperation()
+        }
+
+        // Android 12 (API 32) and below only call this deprecated overload
+        @Deprecated("Deprecated in Java")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicRead(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                onCharacteristicRead(gatt, characteristic, characteristic.value ?: ByteArray(0), status)
+            }
+        }
+
         override fun onCharacteristicWrite(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
@@ -270,6 +306,7 @@ class KickrBluetoothService(private val context: Context) {
         }
 
         val started = when (operation) {
+            is GattOperation.ReadCharacteristic -> gatt.readCharacteristic(operation.characteristic)
             is GattOperation.WriteCharacteristic -> {
                 operation.characteristic.value = operation.value
                 operation.characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
@@ -394,6 +431,7 @@ class KickrBluetoothService(private val context: Context) {
     // which workouts integrate into distance) don't outlive it and a reconnect starts clean
     private fun resetConnectionState() {
         ftmsControlPointCharacteristic = null
+        resistanceRange = ResistanceRange.DEFAULT
         clearGattOperations()
         currentPower = 0
         currentCadence = 0
@@ -431,11 +469,11 @@ class KickrBluetoothService(private val context: Context) {
         Log.d(TAG, "========================================")
     }
     
-    fun setResistance(resistancePercent: Int) {
-        sendThrottled("resistance") { sendResistanceCommand(resistancePercent) }
+    fun setResistance(level: Int) {
+        sendThrottled("resistance") { sendResistanceCommand(level) }
     }
 
-    private fun sendResistanceCommand(resistancePercent: Int) {
+    private fun sendResistanceCommand(level: Int) {
         val gatt = bluetoothGatt
         if (gatt == null) {
             Log.w(TAG, "Cannot set resistance: GATT not connected")
@@ -444,14 +482,13 @@ class KickrBluetoothService(private val context: Context) {
 
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS RESISTANCE COMMAND")
-        Log.d(TAG, "Input: $resistancePercent%")
+        Log.d(TAG, "Input: level $level")
         
-        // Convert resistance percentage to resistance level (0.1% resolution)
-        // FTMS uses SINT16 with 0.1% resolution
-        // 0% = 0, 50% = 500, 100% = 1000
-        val resistanceLevel = (resistancePercent * 10).toShort()
+        // One level is one increment of the trainer's own range (FTMS SINT16, 0.1 resolution)
+        val range = resistanceRange
+        val resistanceLevel = range.rawFor(level).toShort()
         
-        Log.d(TAG, "Resistance Level: ${resistanceLevel} (0.1% units)")
+        Log.d(TAG, "Resistance Level: ${resistanceLevel} (0.1 units, trainer range $range)")
         
         // Use FTMS (Fitness Machine Service) exclusively
         val queued = sendControlPointCommand(byteArrayOf(
@@ -574,6 +611,12 @@ class KickrBluetoothService(private val context: Context) {
         // Enable FTMS Indoor Bike Data notifications (primary source for speed, power, cadence)
         gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
             Log.d(TAG, "Found Fitness Machine Service")
+
+            // Read the trainer's resistance range first, so it is known before any resistance command
+            service.getCharacteristic(GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE)?.let { characteristic ->
+                enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
+                Log.d(TAG, "Queued read of supported resistance level range")
+            } ?: Log.w(TAG, "Supported resistance level range NOT found - assuming levels 0-100")
             
             // Enable Indoor Bike Data notifications
             service.getCharacteristic(GattAttributes.INDOOR_BIKE_DATA)?.let { characteristic ->

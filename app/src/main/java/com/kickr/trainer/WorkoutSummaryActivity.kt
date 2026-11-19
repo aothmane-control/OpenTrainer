@@ -169,7 +169,7 @@ class WorkoutSummaryActivity : AppCompatActivity() {
             Entry(it.elapsedSeconds.toFloat(), targetOf(it).toFloat())
         }
 
-        val label = if (isPowerWorkout) "Target Power (W)" else "Resistance (%)"
+        val label = if (isPowerWorkout) "Target Power (W)" else "Resistance (level)"
         val dataSet = LineDataSet(entries, label).apply {
             color = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_dark)
             lineWidth = 2f

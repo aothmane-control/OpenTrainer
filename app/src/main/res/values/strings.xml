@@ -37,7 +37,7 @@
     <string name="intervals">Intervals</string>
     <string name="remaining_time_format">Remaining: %d:%02d</string>
     <string name="duration_sec">Duration (seconds)</string>
-    <string name="resistance_percent">Resistance (%)</string>
+    <string name="resistance_percent">Resistance level</string>
     <string name="add_interval">Add Interval</string>
     <string name="start_workout">Start Workout</string>
     <string name="cancel">Cancel</string>
@@ -56,7 +56,7 @@
     <string name="workout_active">Workout Active</string>
     <string name="workout_preview">Connected (faked with sample data)</string>
     <string name="workout_interval_format">Interval %1$d of %2$d</string>
-    <string name="workout_resistance_format">Target: %1$d%%</string>
+    <string name="workout_resistance_format">Target: level %1$d</string>
     <string name="workout_complete">Workout Complete!</string>
     <string name="workout_profile">Workout Profile</string>
     <string name="resistance_profile">Resistance Profile</string>
@@ -70,7 +70,8 @@
     <string name="resistance_mode">Resistance</string>
     <string name="power_mode">Power</string>
     <string name="target_value">Target Value</string>
-    <string name="resistance_percent_hint">Resistance (0-100%)</string>
+    <string name="resistance_percent_hint">Resistance level (0-%1$d)</string>
+    <string name="resistance_level_note">Levels are specific to this trainer and not comparable across trainers. Use power mode for comparable workouts.</string>
     <string name="power_watts_hint">Power (watts)</string>
     <string name="power_format_display">%d W</string>
     <string name="workout_power_format">Target: %1$d W</string>
@@ -79,7 +80,7 @@
     <string name="compact_workout_started">Workout started</string>
     <string name="compact_workout_remaining">Workout remaining</string>
     <string name="compact_interval_remaining">Interval: %1$s</string>
-    <string name="compact_next_resistance">Next: %1$d%% resistance</string>
+    <string name="compact_next_resistance">Next: level %1$d</string>
     <string name="compact_next_power">Next: %1$d W</string>
     <string name="compact_final_interval">Final interval</string>
     <string name="compact_profile">Profile</string>

@@ -35,7 +35,7 @@ class SavedWorkoutStorageTest {
             "Alpha":$definition,
             "Incomplete":{"totalDurationSeconds":120,"intervals":[{"duration":60,"resistance":25}]},
             "Empty":{"totalDurationSeconds":0,"intervals":[]},
-            "Bad target":{"totalDurationSeconds":60,"intervals":[{"duration":60,"resistance":101}]},
+            "Bad target":{"totalDurationSeconds":60,"intervals":[{"duration":60,"resistance":-1}]},
             "Broken":{"intervals":[]},
             "Wrong shape":false
         }""").commit()
