@@ -53,6 +53,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
     // Highest resistance level of the connected trainer
     private val maxResistance by lazy { intent.getIntExtra("max_resistance_level", 100) }
+    private val minResistance by lazy { intent.getIntExtra("min_resistance_level", 0) } // Lowest level
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -147,7 +148,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     
     private fun updateIntervalInputHint() {
         intervalValueLayout.hint = when (workoutType) {
-            WorkoutType.RESISTANCE -> getString(R.string.resistance_percent_hint, maxResistance)
+            WorkoutType.RESISTANCE -> getString(R.string.resistance_percent_hint, minResistance, maxResistance)
             WorkoutType.POWER -> getString(R.string.power_watts_hint)
         }
         intervalValueLayout.helperText = when (workoutType) {
@@ -233,7 +234,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
         // Set hint based on workout type
         when (workoutType) {
             WorkoutType.RESISTANCE -> {
-                valueLayout.hint = getString(R.string.resistance_percent_hint, maxResistance)
+                valueLayout.hint = getString(R.string.resistance_percent_hint, minResistance, maxResistance)
                 valueEditText.setText(interval.resistance.toString())
             }
             WorkoutType.POWER -> {
@@ -259,13 +260,13 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 
                 // Validate based on workout type
                 val isValid = when (workoutType) {
-                    WorkoutType.RESISTANCE -> value != null && value in 0..maxResistance
+                    WorkoutType.RESISTANCE -> value != null && value in minResistance..maxResistance
                     WorkoutType.POWER -> value != null && value in 1..1000
                 }
                 
                 if (!isValid) {
                     val errorMsg = when (workoutType) {
-                        WorkoutType.RESISTANCE -> "Resistance level must be between 0 and $maxResistance"
+                        WorkoutType.RESISTANCE -> "Resistance level must be between $minResistance and $maxResistance"
                         WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
                     }
                     Toast.makeText(this, errorMsg, Toast.LENGTH_SHORT).show()

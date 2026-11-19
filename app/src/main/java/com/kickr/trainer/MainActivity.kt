@@ -954,6 +954,7 @@ class MainActivity : AppCompatActivity() {
         setupWorkoutButton.setOnClickListener {
             Log.d(TAG, "Setup Workout button clicked")
             val intent = Intent(this, WorkoutSetupActivity::class.java)
+                .putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
                 .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
             workoutSetupLauncher.launch(intent)
         }

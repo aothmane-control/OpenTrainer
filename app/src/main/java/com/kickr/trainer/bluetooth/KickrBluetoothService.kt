@@ -58,6 +58,7 @@ class KickrBluetoothService(private val context: Context) {
     private var ftmsControlPointCharacteristic: BluetoothGattCharacteristic? = null
     // Written from the GATT callback thread, read when sending resistance commands
     @Volatile private var resistanceRange = ResistanceRange.DEFAULT
+    val minResistanceLevel get() = resistanceRange.minLevel
     val maxResistanceLevel get() = resistanceRange.maxLevel
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands

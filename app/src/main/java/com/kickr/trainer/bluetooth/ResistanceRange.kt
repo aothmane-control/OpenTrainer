@@ -11,13 +11,14 @@ import java.nio.ByteOrder
 /**
  * Resistance values a trainer accepts, in raw FTMS units (0.1 resolution), as reported by
  * its Supported Resistance Level Range characteristic. Workouts count resistance in levels:
- * level 0 is the trainer's minimum and each level is one increment more.
+ * one per increment, numbered as on the trainer (1.0-24.0 in steps of 1.0 gives levels 1-24).
  */
 data class ResistanceRange(val minimum: Int, val maximum: Int, val increment: Int) {
 
-    val maxLevel get() = (maximum - minimum) / increment
+    val minLevel get() = (minimum / increment).coerceAtLeast(0)
+    val maxLevel get() = maximum / increment
 
-    fun rawFor(level: Int) = minimum + level.coerceIn(0, maxLevel) * increment
+    fun rawFor(level: Int) = (level * increment).coerceIn(minimum, maximum)
 
     companion object {
         // Used when the trainer doesn't report a range: levels 0-100, sent as 0-1000 like before
