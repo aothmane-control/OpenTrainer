@@ -35,6 +35,7 @@ class GpxMapActivity : AppCompatActivity() {
 
     private lateinit var mapView: MapView
     private lateinit var loadGpxButton: Button
+    private lateinit var riderBikeButton: Button
     private lateinit var startWorkoutButton: Button
     private lateinit var trackInfoTextView: TextView
     private var currentTrack: GpxTrack? = null
@@ -67,6 +68,7 @@ class GpxMapActivity : AppCompatActivity() {
     private fun initViews() {
         mapView = findViewById(R.id.mapView)
         loadGpxButton = findViewById(R.id.loadGpxButton)
+        riderBikeButton = findViewById(R.id.riderBikeButton)
         startWorkoutButton = findViewById(R.id.startWorkoutButton)
         trackInfoTextView = findViewById(R.id.trackInfoTextView)
     }
@@ -83,6 +85,10 @@ class GpxMapActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         loadGpxButton.setOnClickListener {
             gpxFileLauncher.launch(arrayOf("application/gpx+xml", "text/xml", "*/*"))
+        }
+
+        riderBikeButton.setOnClickListener {
+            startActivity(Intent(this, RiderBikeSettingsActivity::class.java))
         }
         
         startWorkoutButton.setOnClickListener {
@@ -114,6 +120,7 @@ class GpxMapActivity : AppCompatActivity() {
                 updateCurrentPosition(currentDistance)
                 startWorkoutButton.visibility = android.view.View.GONE
                 loadGpxButton.visibility = android.view.View.GONE
+                riderBikeButton.visibility = android.view.View.GONE
             }
         }
     }

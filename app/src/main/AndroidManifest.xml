@@ -75,6 +75,11 @@
             android:name=".WorkoutHistoryActivity"
             android:exported="false"
             android:label="Workout History" />
+
+        <activity
+            android:name=".RiderBikeSettingsActivity"
+            android:exported="false"
+            android:label="@string/rider_bike_settings" />
     </application>
 
 </manifest>
