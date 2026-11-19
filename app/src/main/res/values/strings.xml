@@ -121,4 +121,5 @@
     <string name="save">Save</string>
     <string name="value_out_of_range">Enter a value from %1$s to %2$s</string>
     <string name="rider_bike_saved">Rider and bike settings saved</string>
+    <string name="rider_bike_note">Rider plus bike weight and the wheel circumference are sent to the trainer when it connects. Rolling resistance, wind resistance and wind speed are used in GPX rides.</string>
 </resources>

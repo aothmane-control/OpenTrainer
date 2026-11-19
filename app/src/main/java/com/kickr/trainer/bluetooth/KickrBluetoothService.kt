@@ -76,10 +76,11 @@ class KickrBluetoothService(private val context: Context) {
     // The rider and bike the trainer simulates with, sent on every connection
     @Volatile var riderBikeSettings = RiderBikeSettings.DEFAULT
         private set
-    // Whether the rider weight the trainer simulates with can be written (User Data Service)
-    val hasWeightCharacteristic: Boolean
+    // The weight the trainer simulates with (User Data Service), if it lets apps set it
+    private val weightCharacteristic: BluetoothGattCharacteristic?
         get() = bluetoothGatt?.getService(GattAttributes.USER_DATA_SERVICE)
-            ?.getCharacteristic(GattAttributes.WEIGHT) != null
+            ?.getCharacteristic(GattAttributes.WEIGHT)
+    val hasWeightCharacteristic: Boolean get() = weightCharacteristic != null
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     private val commandHandler = Handler(Looper.getMainLooper())
@@ -267,6 +268,10 @@ class KickrBluetoothService(private val context: Context) {
             value: ByteArray,
             status: Int
         ) {
+            if (characteristic.uuid == GattAttributes.WEIGHT) {
+                val raw = if (value.size >= 2) (value[0].toInt() and 0xFF) or ((value[1].toInt() and 0xFF) shl 8) else -1
+                Log.d(TAG, "Trainer weight (status=$status): %.3f kg".format(raw * WEIGHT_RESOLUTION_KG))
+            }
             if (characteristic.uuid == GattAttributes.FITNESS_MACHINE_FEATURE) {
                 features = if (status == BluetoothGatt.GATT_SUCCESS) FitnessMachineFeatures.parse(value) else null
                 Log.d(TAG, "Fitness machine features (status=$status): $features")
@@ -547,6 +552,27 @@ class KickrBluetoothService(private val context: Context) {
         if (settings.wheelCircumferenceMm != previous.wheelCircumferenceMm) {
             setWheelCircumference(settings.wheelCircumferenceMm)
         }
+        if (settings.totalWeightKg != previous.totalWeightKg) {
+            setWeight(settings.totalWeightKg)
+        }
+    }
+
+    // User Data Weight: UINT16 in 0.005 kg. The trainer uses it for the climbing force in simulation mode.
+    private fun setWeight(weightKg: Double) {
+        val characteristic = weightCharacteristic
+        if (characteristic == null) {
+            Log.w(TAG, "Cannot set weight: trainer has no User Data Weight characteristic")
+            return
+        }
+        val raw = (weightKg / WEIGHT_RESOLUTION_KG).roundToInt().coerceIn(0, 0xFFFF)
+        Log.d(TAG, "Setting trainer weight to %.1f kg (raw $raw)".format(weightKg))
+        enqueueGattOperation(GattOperation.WriteCharacteristic(
+            characteristic, byteArrayOf((raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
+        ))
+        // Read it back, so the log shows what the trainer kept
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) {
+            enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
+        }
     }
 
     private fun setWheelCircumference(circumferenceMm: Double) {
@@ -702,6 +728,7 @@ class KickrBluetoothService(private val context: Context) {
                 
                 // Set wheel circumference for proper speed calculation
                 setWheelCircumference(riderBikeSettings.wheelCircumferenceMm)
+                setWeight(riderBikeSettings.totalWeightKg)
                 
                 // Send Start/Resume command to ensure trainer is in active mode
                 sendStartCommand()
@@ -853,6 +880,7 @@ class KickrBluetoothService(private val context: Context) {
     }
     
     companion object {
+        private const val WEIGHT_RESOLUTION_KG = 0.005
         private const val TAG = "KickrBluetoothService"
     }
 }
