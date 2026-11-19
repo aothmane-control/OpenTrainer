@@ -7,6 +7,7 @@ package com.kickr.trainer
 
 import android.graphics.Color
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -19,6 +20,8 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
+import kotlin.math.ceil
+import kotlin.math.floor
 
 class WorkoutSummaryActivity : AppCompatActivity() {
 
@@ -157,6 +160,11 @@ class WorkoutSummaryActivity : AppCompatActivity() {
     }
 
     private fun displayResistanceChart(workout: WorkoutHistory) {
+        // GPX rides control the trainer by grade
+        if (workout.workoutType == "GPX") {
+            displayGradeChart(workout)
+            return
+        }
         // Power workouts control target power rather than resistance
         val isPowerWorkout = workout.workoutType == "POWER"
         if (isPowerWorkout) {
@@ -170,16 +178,7 @@ class WorkoutSummaryActivity : AppCompatActivity() {
         }
 
         val label = if (isPowerWorkout) "Target Power (W)" else "Resistance (level)"
-        val dataSet = LineDataSet(entries, label).apply {
-            color = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_dark)
-            lineWidth = 2f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(true)
-            fillColor = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_light)
-            fillAlpha = 50
-        }
+        val dataSet = profileDataSet(entries, label)
 
         // Calculate 110% of max value for better visualization (never a zero-height axis)
         val maxValue = workout.dataPoints.maxOfOrNull { targetOf(it) }?.toFloat() ?: 100f
@@ -191,6 +190,39 @@ class WorkoutSummaryActivity : AppCompatActivity() {
         resistanceHistoryChart.axisLeft.axisMinimum = 0f
         resistanceHistoryChart.axisLeft.axisMaximum = yMax
         resistanceHistoryChart.invalidate()
+    }
+
+    // The grade sent to the trainer each second. Rides from before it was recorded have none.
+    private fun displayGradeChart(workout: WorkoutHistory) {
+        val title = findViewById<TextView>(R.id.resistanceChartTitle)
+        val grades = workout.dataPoints.mapNotNull { point ->
+            point.grade?.let { Entry(point.elapsedSeconds.toFloat(), it.toFloat()) }
+        }
+        if (grades.isEmpty()) {
+            title.setText(R.string.grade_not_recorded)
+            resistanceHistoryChart.visibility = View.GONE
+            return
+        }
+        title.setText(R.string.grade_profile)
+
+        resistanceHistoryChart.data = LineData(profileDataSet(grades, "Grade (%)"))
+        resistanceHistoryChart.xAxis.axisMinimum = 0f
+        resistanceHistoryChart.xAxis.axisMaximum = workout.getDurationSeconds().toFloat()
+        // Whole percent with a margin, always including 0 % so descents show below the line
+        resistanceHistoryChart.axisLeft.axisMinimum = floor(minOf(0f, grades.minOf { it.y })) - 1f
+        resistanceHistoryChart.axisLeft.axisMaximum = ceil(maxOf(0f, grades.maxOf { it.y })) + 1f
+        resistanceHistoryChart.invalidate()
+    }
+
+    private fun profileDataSet(entries: List<Entry>, label: String) = LineDataSet(entries, label).apply {
+        color = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_dark)
+        lineWidth = 2f
+        setDrawCircles(false)
+        setDrawValues(false)
+        mode = LineDataSet.Mode.LINEAR
+        setDrawFilled(true)
+        fillColor = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_light)
+        fillAlpha = 50
     }
 
     private fun setupClickListeners() {
