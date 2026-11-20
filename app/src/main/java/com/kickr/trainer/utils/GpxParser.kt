@@ -14,7 +14,10 @@ import org.xmlpull.v1.XmlPullParserException
 import java.io.IOException
 import java.io.InputStream
 
-class GpxParser {
+class GpxParser(
+    // Unit tests pass a JVM parser, since android.util.Xml only exists on the device
+    private val newPullParser: () -> XmlPullParser = { Xml.newPullParser() }
+) {
     
     companion object {
         private const val TAG = "GpxParser"
@@ -23,7 +26,7 @@ class GpxParser {
     @Throws(XmlPullParserException::class, IOException::class)
     fun parse(inputStream: InputStream): GpxTrack? {
         inputStream.use { stream ->
-            val parser: XmlPullParser = Xml.newPullParser()
+            val parser: XmlPullParser = newPullParser()
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             parser.setInput(stream, null)
             parser.nextTag()
