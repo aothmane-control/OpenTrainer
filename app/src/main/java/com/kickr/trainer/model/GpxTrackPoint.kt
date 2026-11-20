@@ -66,27 +66,34 @@ data class GpxTrack(
         if (targetDistance >= totalDistance) return points.last()
         
         // Find the two points that bracket the target distance
-        for (i in 0 until points.size - 1) {
-            val p1 = points[i]
-            val p2 = points[i + 1]
-            
-            if (targetDistance >= p1.distanceFromStart && targetDistance <= p2.distanceFromStart) {
-                // Interpolate between p1 and p2
-                val segmentDistance = p2.distanceFromStart - p1.distanceFromStart
-                if (segmentDistance < 0.1) return p1 // Too close, return first point
-                
-                val ratio = (targetDistance - p1.distanceFromStart) / segmentDistance
-                
-                return GpxTrackPoint(
-                    latitude = p1.latitude + (p2.latitude - p1.latitude) * ratio,
-                    longitude = p1.longitude + (p2.longitude - p1.longitude) * ratio,
-                    elevation = interpolateElevation(p1.elevation, p2.elevation, ratio),
-                    distanceFromStart = targetDistance
-                )
-            }
+        val index = firstPointAtOrAfter(targetDistance)
+        if (index == 0 || index == points.size) return points.last()
+        val p1 = points[index - 1]
+        val p2 = points[index]
+
+        // Interpolate between p1 and p2
+        val segmentDistance = p2.distanceFromStart - p1.distanceFromStart
+        if (segmentDistance < 0.1) return p1 // Too close, return first point
+
+        val ratio = (targetDistance - p1.distanceFromStart) / segmentDistance
+
+        return GpxTrackPoint(
+            latitude = p1.latitude + (p2.latitude - p1.latitude) * ratio,
+            longitude = p1.longitude + (p2.longitude - p1.longitude) * ratio,
+            elevation = interpolateElevation(p1.elevation, p2.elevation, ratio),
+            distanceFromStart = targetDistance
+        )
+    }
+
+    // Binary search for the first point at or beyond the distance; distanceFromStart never decreases
+    private fun firstPointAtOrAfter(distance: Double): Int {
+        var low = 0
+        var high = points.size
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            if (points[mid].distanceFromStart < distance) low = mid + 1 else high = mid
         }
-        
-        return points.last()
+        return low
     }
     
     private fun interpolateElevation(e1: Double?, e2: Double?, ratio: Double): Double? {
