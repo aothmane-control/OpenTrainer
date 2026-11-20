@@ -192,17 +192,17 @@ class GpxParser(
             }
             
             // Namespace processing is off, so names keep their prefix (e.g. "gpxtpx:hr")
-            when (parser.name.substringAfter(':').lowercase()) {
-                "hr", "heartrate" -> {
-                    extensions["hr"] = readText(parser).trim().toIntOrNull() ?: 0
-                }
-                "cad", "cadence" -> {
-                    extensions["cad"] = readText(parser).trim().toIntOrNull() ?: 0
-                }
-                "power", "powerinwatts", "watts" -> {
-                    extensions["power"] = readText(parser).trim().toIntOrNull() ?: 0
-                }
-                else -> readExtensions(parser, extensions)
+            val key = when (parser.name.substringAfter(':').lowercase()) {
+                "hr", "heartrate" -> "hr"
+                "cad", "cadence" -> "cad"
+                "power", "powerinwatts", "watts" -> "power"
+                else -> null
+            }
+            if (key == null) {
+                readExtensions(parser, extensions)
+            } else {
+                // Unreadable values stay missing; 0 would be a real reading
+                readText(parser).trim().toIntOrNull()?.let { extensions[key] = it }
             }
         }
         

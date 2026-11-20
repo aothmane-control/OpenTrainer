@@ -57,6 +57,22 @@ class GpxParserTest {
     }
 
     @Test
+    fun unreadableExtensionValuesAreMissingNotZero() {
+        val track = parse(
+            """<gpx xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>
+                <trkpt lat="49.0" lon="7.0"><extensions><power>n/a</power><gpxtpx:TrackPointExtension>
+                    <gpxtpx:hr></gpxtpx:hr><gpxtpx:cad> 0 </gpxtpx:cad>
+                </gpxtpx:TrackPointExtension></extensions></trkpt>
+            </trkseg></trk></gpx>"""
+        )!!
+        val point = track.points.single()
+        assertNull(point.power)
+        assertNull(point.heartRate)
+        // Zero is a real reading, for example when coasting
+        assertEquals(0, point.cadence)
+    }
+
+    @Test
     fun fileWithoutPointsGivesNoTrack() {
         assertNull(parse("<gpx><trk><name>Empty</name><trkseg/></trk></gpx>"))
     }
