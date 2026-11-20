@@ -615,35 +615,11 @@ class KickrBluetoothService(private val context: Context) {
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS SIMULATION PARAMETERS")
         Log.d(TAG, "Grade: %.2f%%, Wind: %.2f m/s, Crr: %.4f, Cw: %.2f".format(gradePercent, windSpeedMps, crr, cw))
-        
-        // Convert parameters to FTMS format
-        // Wind Speed: SINT16, 0.001 m/s resolution
-        val windSpeed = (windSpeedMps * 1000).toInt().coerceIn(-32768, 32767).toShort()
-        
-        // Grade: SINT16, 0.01% resolution, range: -100.00% to +100.00%
-        val grade = (gradePercent * 100).toInt().coerceIn(-10000, 10000).toShort()
-        
-        // Crr: UINT8, 0.0001 resolution
-        val crrByte = (crr * 10000).toInt().coerceIn(0, 255).toByte()
-        
-        // Cw: UINT8, 0.01 kg/m resolution
-        val cwByte = (cw * 100).toInt().coerceIn(0, 255).toByte()
-        
-        Log.d(TAG, "  Wind Speed: $windSpeed (0.001 m/s units)")
-        Log.d(TAG, "  Grade: $grade (0.01%% units)")
-        Log.d(TAG, "  Crr: $crrByte")
-        Log.d(TAG, "  Cw: $cwByte")
-        
-        // Use FTMS (Fitness Machine Service)
-        val queued = sendControlPointCommand(byteArrayOf(
-            0x11.toByte(), // Opcode: Set Indoor Bike Simulation Parameters
-            (windSpeed.toInt() and 0xFF).toByte(),
-            ((windSpeed.toInt() shr 8) and 0xFF).toByte(),
-            (grade.toInt() and 0xFF).toByte(),
-            ((grade.toInt() shr 8) and 0xFF).toByte(),
-            crrByte,
-            cwByte
-        ))
+
+        // sendControlPointCommand() logs the encoded bytes
+        val queued = sendControlPointCommand(
+            SimulationParameters(windSpeedMps, gradePercent, crr, cw).toCommand()
+        )
         Log.d(TAG, "========================================")
 
         if (!queued) {
