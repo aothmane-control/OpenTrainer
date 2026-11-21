@@ -1613,7 +1613,6 @@ class MainActivity : AppCompatActivity() {
             previousSpeed
         }
         cumulativeDistance += (previousSpeed + virtualSpeed) / 2 * secondsDelta
-        val validSpeed = virtualSpeed * 3.6 // km/h, for the log
         
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
@@ -1642,8 +1641,9 @@ class MainActivity : AppCompatActivity() {
             cw = settings.windResistance
         )
         
-        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h, gradient=%.1f%%".format(
-            cumulativeDistance, validSpeed, gradient
+        // With the trainer's own speed and power, so the two speeds can be compared on the flat (#8)
+        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h (trainer %.1f km/h, %d W), gradient=%.1f%%".format(
+            cumulativeDistance, virtualSpeed * 3.6, data.speed, data.power, gradient
         ))
         
         // Check if workout complete
