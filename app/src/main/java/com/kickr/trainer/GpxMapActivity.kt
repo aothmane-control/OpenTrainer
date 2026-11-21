@@ -265,6 +265,11 @@ class GpxMapActivity : AppCompatActivity() {
                 val maxEle = elevations.maxOrNull() ?: 0.0
                 append("Elevation: ${"%.0f".format(minEle)}m - ${"%.0f".format(maxEle)}m\n")
             }
+            // The grade is interpolated across points without elevation; without any the ride is flat
+            if (elevations.size < pointCount * 0.95) {
+                append("Warning: no elevation for ${pointCount - elevations.size} of $pointCount points")
+                append(if (elevations.isEmpty()) ", the ride will be flat\n" else "\n")
+            }
             
             // Show data availability
             val hasHR = track.points.any { it.heartRate != null }

@@ -6,7 +6,9 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Random
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 class GpxTrackTest {
@@ -146,6 +148,25 @@ class GpxTrackTest {
         val start = track.points[50].distanceFromStart
         val steepest = (0..30).maxOf { track.getGradientAtDistance(start + it) }
         assertTrue("steepest $steepest %", steepest >= 8.0)
+    }
+
+    @Test
+    fun missingElevationsAreInterpolatedFromBothSides() {
+        // Hills of ±20 m every 1 km, and the same track with every second elevation missing
+        val full = trackOfElevations(301) { i -> 100 + 20 * sin(2 * PI * i * SPACING_M / 1000) }
+        val sparse = GpxTrack(full.name, full.points.mapIndexed { i, point ->
+            if (i % 2 == 1) point.copy(elevation = null) else point
+        })
+        val largestDifference = generateSequence(0.0) { it + 5.0 }.takeWhile { it <= full.totalDistance }
+            .maxOf { abs(sparse.getGradientAtDistance(it) - full.getGradientAtDistance(it)) }
+        assertTrue("differs by $largestDifference points", largestDifference < 0.5)
+    }
+
+    @Test
+    fun aTrackWithoutElevationIsFlat() {
+        val track = GpxTrack(climb.name, climb.points.map { it.copy(elevation = null) })
+        assertEquals(0.0, track.getGradientAtDistance(0.0), 0.0)
+        assertEquals(0.0, track.getGradientAtDistance(100.0), 0.0)
     }
 
     @Test

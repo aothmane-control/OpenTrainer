@@ -24,8 +24,9 @@ data class GpxTrack(
     val name: String,
     val points: List<GpxTrackPoint>
 ) {
+    // Once distances are computed the last point carries the total, also when points were left out
     val totalDistance: Double by lazy {
-        calculateTotalDistance()
+        points.lastOrNull()?.distanceFromStart?.takeIf { it > 0 } ?: calculateTotalDistance()
     }
     
     private fun calculateTotalDistance(): Double {
@@ -66,7 +67,9 @@ data class GpxTrack(
         
         // Find the two points that bracket the target distance
         val index = firstPointAtOrAfter(targetDistance)
-        if (index == 0 || index == points.size) return points.last()
+        // Before the first point, in a profile that starts after 0 m, or past the last one
+        if (index == 0) return points.first()
+        if (index == points.size) return points.last()
         val p1 = points[index - 1]
         val p2 = points[index]
 
@@ -109,8 +112,8 @@ data class GpxTrack(
      * their neighbours. The median ignores bends and outliers, so clean files give about 0.
      */
     val elevationNoise: Double by lazy {
-        val deviations = (1 until points.size - 1).mapNotNull { i ->
-            residualAt(i)?.let { (residual, noiseScale, _) -> abs(residual) / noiseScale }
+        val deviations = (1 until profile.points.size - 1).mapNotNull { i ->
+            profile.residualAt(i)?.let { (residual, noiseScale, _) -> abs(residual) / noiseScale }
         }.sorted()
         if (deviations.isEmpty()) 0.0 else MAD_TO_SIGMA * deviations[deviations.size / 2]
     }
@@ -120,19 +123,27 @@ data class GpxTrack(
      * where they start, and on noisy ones long enough that the grade noise stays near GRADE_NOISE.
      */
     val gradeWindow: Double by lazy {
-        val spacing = if (points.size > 1) totalDistance / (points.size - 1) else 0.0
+        val elevated = profile.points
+        val spacing = if (elevated.size > 1) {
+            (elevated.last().distanceFromStart - elevated.first().distanceFromStart) / (elevated.size - 1)
+        } else 0.0
         // A least-squares slope over W m with independent points every s m varies by σ·sqrt(12 s) / W^1.5
         (elevationNoise * sqrt(12 * spacing) / GRADE_NOISE).pow(2.0 / 3)
             .coerceIn(MIN_GRADE_WINDOW_M, MAX_GRADE_WINDOW_M)
     }
 
-    // The track with single-point spikes moved onto the line through their neighbours: points further
+    // Only the points with an elevation, so the grade is interpolated linearly between the ones on
+    // either side of a gap instead of holding one value (#7). Without any elevation the ride is flat.
+    private val profile: GpxTrack by lazy { copy(points = points.filter { it.elevation != null }) }
+
+    // The profile with single-point spikes moved onto the line through their neighbours: points further
     // off it than two road grades of up to 35 % could put them, than 3 σ of the noise, and than both
     // neighbours. Those are GPS outliers, not terrain. Moving ordinary noisy points would only add
     // noise to the fitted grade.
     private val despiked: GpxTrack by lazy {
-        val residuals = points.indices.map { i -> if (i in 1 until points.lastIndex) residualAt(i) else null }
-        copy(points = points.mapIndexed { i, point ->
+        val elevated = profile.points
+        val residuals = elevated.indices.map { i -> if (i in 1 until elevated.lastIndex) profile.residualAt(i) else null }
+        profile.copy(points = elevated.mapIndexed { i, point ->
             val (residual, noiseScale, roadLimit) = residuals[i] ?: return@mapIndexed point
             val isSpike = abs(residual) > maxOf(roadLimit, SPIKE_SIGMAS * elevationNoise * noiseScale) &&
                 abs(residual) >= abs(residuals[i - 1]?.first ?: 0.0) &&
