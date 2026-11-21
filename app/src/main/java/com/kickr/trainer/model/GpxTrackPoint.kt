@@ -109,14 +109,43 @@ data class GpxTrack(
     }
     
     /**
-     * Elevation noise in m (standard deviation), estimated from how far points lie off the line through
-     * their neighbours. The median ignores bends and outliers, so clean files give about 0.
+     * Elevation noise in m (standard deviation), estimated from how far points lie off a curve through
+     * their neighbours: the line through the nearest one on each side, or the polynomial through the
+     * nearest two or three. Terrain the curve doesn't follow counts as noise, so the smallest estimate
+     * is kept. The line suits sharp changes of grade, the polynomials hills between points 50–100 m
+     * apart. The median ignores single bends and outliers, so clean files give about 0.
      */
     val elevationNoise: Double by lazy {
-        val deviations = (1 until profile.points.size - 1).mapNotNull { i ->
-            profile.residualAt(i)?.let { (residual, noiseScale, _) -> abs(residual) / noiseScale }
-        }.sorted()
-        if (deviations.isEmpty()) 0.0 else MAD_TO_SIGMA * deviations[deviations.size / 2]
+        (1..MAX_NOISE_REACH).mapNotNull { reach -> profile.noiseOffCurves(reach) }.minOrNull() ?: 0.0
+    }
+
+    // Standard deviation from the median of offCurve(), or null if no point has enough neighbours
+    private fun noiseOffCurves(reach: Int): Double? {
+        val deviations = (reach until points.size - reach).mapNotNull { i -> offCurve(i, reach) }.sorted()
+        return if (deviations.isEmpty()) null else MAD_TO_SIGMA * deviations[deviations.size / 2]
+    }
+
+    // How far point i lies off the polynomial through its [reach] neighbours on each side, divided by how
+    // much independent noise of 1 m on all of them moves it. With reach 1 this is residualAt().
+    private fun offCurve(i: Int, reach: Int): Double? {
+        val distances = (i - reach..i + reach).map { points[it].distanceFromStart }
+        if (distances.zipWithNext().any { (a, b) -> b <= a }) return null
+        val x = points[i].distanceFromStart
+        val neighbours = (i - reach..i + reach).filter { it != i }
+        var prediction = 0.0
+        var squaredWeights = 0.0
+        for (j in neighbours) {
+            // Lagrange weight of neighbour j at x
+            val xj = points[j].distanceFromStart
+            val weight = neighbours.filter { it != j }.fold(1.0) { product, k ->
+                val xk = points[k].distanceFromStart
+                product * (x - xk) / (xj - xk)
+            }
+            prediction += weight * (points[j].elevation ?: return null)
+            squaredWeights += weight * weight
+        }
+        val elevation = points[i].elevation ?: return null
+        return abs(elevation - prediction) / sqrt(1 + squaredWeights)
     }
 
     /**
@@ -207,5 +236,6 @@ data class GpxTrack(
         private const val MAX_ROAD_GRADE = 0.35
         private const val SPIKE_SIGMAS = 3.0
         private const val MAD_TO_SIGMA = 1.4826      // Median absolute deviation to σ for normal noise
+        private const val MAX_NOISE_REACH = 3        // Up to quintics through 3 points on each side
     }
 }

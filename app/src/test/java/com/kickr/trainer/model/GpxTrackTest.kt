@@ -31,6 +31,14 @@ class GpxTrackTest {
         return trackOfElevations(2000) { i -> 100 + grade * i * SPACING_M + 5 * random.nextGaussian() }
     }
 
+    // Hills of ±20 m every 1 km (up to 12.6 %), with points 0.0009° of latitude (about 100 m) apart
+    private fun hillsWithDistantPoints(count: Int, noise: Double = 0.0, seed: Long = 1): GpxTrack {
+        val random = Random(seed)
+        return trackOf(*Array(count) { i ->
+            49.0 + i * 0.0009 to 100 + 20 * sin(2 * PI * i * 10 * SPACING_M / 1000) + noise * random.nextGaussian()
+        })
+    }
+
     // Every 10 m, at least one grade window away from the ends
     private fun gradesAwayFromTheEnds(track: GpxTrack): List<Double> =
         generateSequence(track.gradeWindow) { it + 10.0 }
@@ -111,6 +119,22 @@ class GpxTrackTest {
         val grades = gradesAwayFromTheEnds(noisyTrack(grade = 0.06))
         assertEquals(6.0, grades.average(), 0.5)
         assertTrue("σ ${grades.standardDeviation()} %", grades.standardDeviation() < 1.0)
+    }
+
+    @Test
+    fun hillsBetweenDistantPointsAreNotTakenForNoise() {
+        val track = hillsWithDistantPoints(201)
+        assertTrue("noise ${track.elevationNoise} m", track.elevationNoise < 0.1)
+        assertTrue("window ${track.gradeWindow} m", track.gradeWindow < 40)
+        // The steepest line between two points is 12.4 %
+        val steepest = generateSequence(0.0) { it + 5.0 }.takeWhile { it <= track.totalDistance }
+            .maxOf { track.getGradientAtDistance(it) }
+        assertTrue("steepest $steepest %", steepest > 11.5)
+    }
+
+    @Test
+    fun noiseOnDistantPointsIsStillFound() {
+        assertEquals(3.0, hillsWithDistantPoints(1001, noise = 3.0).elevationNoise, 0.4)
     }
 
     @Test
