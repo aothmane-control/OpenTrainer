@@ -58,6 +58,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
+import com.kickr.trainer.utils.SavedTrainerStorage
 import com.kickr.trainer.utils.RiderBikeSettingsStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
@@ -88,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startSavedWorkoutButton: Button
     private var selectedWorkoutName: String? = null
     private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
+    private val savedTrainerStorage by lazy { SavedTrainerStorage(this) }
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
     private lateinit var pauseResumeWorkoutButton: Button
@@ -688,6 +690,13 @@ class MainActivity : AppCompatActivity() {
                 // During a workout (also after a reconnect) this shows the workout controls
                 // instead of the setup buttons, so a second workout can't be started on top
                 updateWorkoutLayout()
+            }
+        }
+
+        // Remember each trainer's resistance levels, so workouts can be set up without it
+        lifecycleScope.launch {
+            bluetoothService.connectedTrainer.collect { trainer ->
+                if (trainer != null) savedTrainerStorage.save(trainer)
             }
         }
 
