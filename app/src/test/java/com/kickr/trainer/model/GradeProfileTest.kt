@@ -23,4 +23,22 @@ class GradeProfileTest {
         assertEquals(0.0..10_000.0, GradeProfile.visibleRange(500.0, 50_000.0))
         assertEquals(40_000.0..50_000.0, GradeProfile.visibleRange(49_000.0, 50_000.0))
     }
+
+    @Test
+    fun gradesStayWithinTheTrainersRange() {
+        assertEquals(20.0, GradeProfile.limit(25.0, null, 1), 0.0)
+        assertEquals(-15.0, GradeProfile.limit(-30.0, null, 1), 0.0)
+    }
+
+    @Test
+    fun gradesChangeByAtMostTwoPointsASecond() {
+        // The first grade of a ride is sent as it is
+        assertEquals(6.0, GradeProfile.limit(6.0, null, 1), 0.0)
+        assertEquals(2.0, GradeProfile.limit(8.0, 0.0, 1), 0.0)
+        assertEquals(4.0, GradeProfile.limit(8.0, 0.0, 2), 0.0)
+        assertEquals(-2.0, GradeProfile.limit(-8.0, 0.0, 1), 0.0)
+        assertEquals(1.0, GradeProfile.limit(1.0, 0.0, 1), 0.0)
+        // Limited to the range first, then in rate
+        assertEquals(18.0, GradeProfile.limit(30.0, 16.0, 1), 0.0)
+    }
 }

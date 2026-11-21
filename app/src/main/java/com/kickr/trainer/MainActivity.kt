@@ -143,6 +143,7 @@ class MainActivity : AppCompatActivity() {
     private var lastSentTarget = -1 // Last resistance (%) or power (W) sent to the trainer; -1 forces a resend
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
+    private var sentGrade: Double? = null // Last grade sent in a GPX workout
     private val currentDistanceKm: Double get() = cumulativeDistance / 1000.0
     private var workoutPaused = false
     private var workoutPausedAtSecond = 0
@@ -1725,6 +1726,8 @@ class MainActivity : AppCompatActivity() {
         )
         
         cumulativeDistance = 0.0
+        sentGrade = null
+        Log.d(TAG, "Grade fitted over %.0f m (elevation noise %.2f m)".format(gpxTrack.gradeWindow, gpxTrack.elevationNoise))
         workoutElapsedSeconds = 0
         workoutStartTime = System.currentTimeMillis()
         workoutDataPoints.clear()
@@ -1750,7 +1753,7 @@ class MainActivity : AppCompatActivity() {
         // Update workout info
         workoutIntervalTextView.text = "GPX: ${gpxTrack.name}"
         workoutTimeTextView.text = String.format("%.2f / %.2f km", 0.0, gpxTrack.totalDistance / 1000)
-        workoutResistanceTextView.text = getString(R.string.grade_format, gpxTrack.getGradientAtDistance(0.0))
+        workoutResistanceTextView.text = getString(R.string.grade_format, GradeProfile.limit(gpxTrack.getGradientAtDistance(0.0), null, 0))
         
         Toast.makeText(this, "GPX workout started! The trainer follows the route's grade", Toast.LENGTH_LONG).show()
         
@@ -1778,8 +1781,9 @@ class MainActivity : AppCompatActivity() {
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
 
-        // Get gradient at current position on track
-        val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
+        // Get gradient at current position on track, within the trainer's range and rate (#10)
+        val gradient = GradeProfile.limit(gpxTrack.getGradientAtDistance(cumulativeDistance), sentGrade, secondsDelta)
+        sentGrade = gradient
 
         // Record the same grade that is sent to the trainer below
         recordWorkoutData(bluetoothService.trainerData.value, gradient)

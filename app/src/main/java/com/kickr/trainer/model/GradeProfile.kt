@@ -7,12 +7,25 @@ package com.kickr.trainer.model
 
 /** The grade a GPX ride sends to the trainer, sampled along the route for the profile chart. */
 object GradeProfile {
-    // The grade is averaged over 100 m, so finer steps would show nothing new
+    // The grade is fitted over at least 20 m, so finer steps would show little new
     private const val MIN_STEP_M = 10.0
     private const val MAX_SAMPLES = 1000
     // Longer routes show this much around the rider, so climbs stay readable
     const val WINDOW_M = 10_000.0
     private const val WINDOW_BEHIND_M = 2_000.0
+    // Within what trainers simulate (the KICKR CORE up to 16 %), so bad data can't reach them either
+    const val MIN_GRADE = -15.0
+    const val MAX_GRADE = 20.0
+    // Percentage points per second, so grade changes don't jolt the rider or the trainer's control loop
+    private const val MAX_GRADE_CHANGE_PER_S = 2.0
+
+    /** The grade to send: the route's grade within MIN_GRADE..MAX_GRADE, changed by at most 2 points a second. */
+    fun limit(routeGrade: Double, previous: Double?, seconds: Int): Double {
+        val clamped = routeGrade.coerceIn(MIN_GRADE, MAX_GRADE)
+        if (previous == null) return clamped
+        val step = MAX_GRADE_CHANGE_PER_S * seconds
+        return clamped.coerceIn(previous - step, previous + step)
+    }
 
     /** (distance in m, grade in %) from start to end, including the end of the route. */
     fun sample(track: GpxTrack): List<Pair<Double, Double>> {
@@ -20,7 +33,7 @@ object GradeProfile {
         if (total <= 0.0) return emptyList()
         val step = maxOf(MIN_STEP_M, total / MAX_SAMPLES)
         val distances = generateSequence(0.0) { it + step }.takeWhile { it < total } + total
-        return distances.map { it to track.getGradientAtDistance(it) }.toList()
+        return distances.map { it to track.getGradientAtDistance(it).coerceIn(MIN_GRADE, MAX_GRADE) }.toList()
     }
 
     /** The whole route if it is short, otherwise a window that moves with the rider. */
