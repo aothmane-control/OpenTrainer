@@ -5,7 +5,9 @@
 
 package com.kickr.trainer
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
 import androidx.preference.PreferenceManager
@@ -23,8 +25,11 @@ import java.io.File
 /** A GPX route and the rider's position on an OpenStreetMap map: the GPX screen and the ride. */
 internal class RouteMap(private val mapView: MapView) {
     private var positionMarker: Marker? = null
+    // When the rider last touched the map, to look around it
+    private var lastTouchMs: Long? = null
 
     init {
+        noteTouches()
         mapView.apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
@@ -38,6 +43,13 @@ internal class RouteMap(private val mapView: MapView) {
             controller.setZoom(5.0)
             controller.setCenter(GeoPoint(48.8566, 2.3522))
         }
+    }
+
+    // Only notes the time: the map still handles the touch, and taps still reach its markers
+    @SuppressLint("ClickableViewAccessibility")
+    private fun noteTouches() = mapView.setOnTouchListener { _, _ ->
+        lastTouchMs = SystemClock.uptimeMillis()
+        false
     }
 
     /** Draws the route with start and end markers and fits it into view. */
@@ -67,7 +79,10 @@ internal class RouteMap(private val mapView: MapView) {
         mapView.invalidate()
     }
 
-    /** Moves the rider's marker to the distance along the route and centres the map on it. */
+    /**
+     * Moves the rider's marker to the distance along the route and centres the map on it, unless the
+     * rider moved the map in the last FOLLOW_PAUSE_MS.
+     */
     fun showPosition(track: GpxTrack, distanceMeters: Double) {
         val point = track.getPointAtDistance(distanceMeters) ?: return
         val geoPoint = GeoPoint(point.latitude, point.longitude)
@@ -80,7 +95,8 @@ internal class RouteMap(private val mapView: MapView) {
             mapView.controller.setZoom(FOLLOW_ZOOM)
         }
         marker.position = geoPoint
-        mapView.controller.animateTo(geoPoint)
+        val touched = lastTouchMs?.let { SystemClock.uptimeMillis() - it < FOLLOW_PAUSE_MS } == true
+        if (!touched) mapView.controller.animateTo(geoPoint)
         mapView.invalidate()
     }
 
@@ -94,6 +110,7 @@ internal class RouteMap(private val mapView: MapView) {
     companion object {
         private const val FIT_PADDING_PX = 100
         private const val FOLLOW_ZOOM = 16.0  // About 600 m across a phone screen
+        private const val FOLLOW_PAUSE_MS = 10_000L
 
         /** osmdroid settings and tile cache; call before inflating a layout with a map. */
         fun configure(context: Context) {
