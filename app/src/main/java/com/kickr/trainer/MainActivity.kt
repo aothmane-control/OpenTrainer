@@ -51,6 +51,7 @@ import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.model.GradeProfile
+import com.kickr.trainer.model.VirtualSpeed
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import kotlin.math.ceil
@@ -137,6 +138,7 @@ class MainActivity : AppCompatActivity() {
     private var workoutElapsedSeconds = 0
     private var cumulativeDistance = 0.0 // For GPX workouts
     private var sentGrade: Double? = null // Last grade sent in a GPX workout
+    private var virtualSpeed = 0.0 // m/s on the route in a GPX workout, from power and grade
     private val currentDistanceKm: Double get() = cumulativeDistance / 1000.0
     private var workoutPaused = false
     private var workoutPausedAtSecond = 0
@@ -1536,6 +1538,7 @@ class MainActivity : AppCompatActivity() {
         
         cumulativeDistance = 0.0
         sentGrade = null
+        virtualSpeed = 0.0
         compactWorkoutView.reset()
         Log.d(TAG, "Grade fitted over %.0f m (elevation noise %.2f m)".format(gpxTrack.gradeWindow, gpxTrack.elevationNoise))
         workoutElapsedSeconds = 0
@@ -1586,15 +1589,15 @@ class MainActivity : AppCompatActivity() {
         val workout = activeWorkout ?: return
         val gpxTrack = workout.gpxTrack ?: return
         
-        // Get current speed from trainer data (already in km/h)
-        val currentSpeed = bluetoothService.trainerData.value.speed
-        
-        // Validate speed (sanity check - if > 100 km/h, likely bad data)
-        val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
-        
-        // Calculate distance traveled since the last update
-        val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
-        cumulativeDistance += distancePerSecond * secondsDelta
+        // Progress comes from the measured power on the grade the trainer applied, not from its
+        // flywheel speed, so descents coast faster instead of stalling (#5)
+        val previousSpeed = virtualSpeed
+        virtualSpeed = VirtualSpeed.advance(
+            previousSpeed, bluetoothService.trainerData.value.power.toDouble(), currentGrade(gpxTrack),
+            bluetoothService.riderBikeSettings, secondsDelta
+        )
+        cumulativeDistance += (previousSpeed + virtualSpeed) / 2 * secondsDelta
+        val validSpeed = virtualSpeed * 3.6 // km/h, for the log
         
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
