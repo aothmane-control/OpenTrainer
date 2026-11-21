@@ -34,6 +34,21 @@ class GpxParserTest {
     }
 
     @Test
+    fun readsTheGapsTestRoute() {
+        val track = File("../testdata/gaps-test.gpx").inputStream().use { parser.parse(it) }!!.withDistances()
+        assertEquals("OpenTrainer gaps test", track.name)
+        assertEquals(22, track.points.size)
+        assertEquals(5, track.points.count { it.elevation == null })
+        // Two 500 m tracks; the 4.5 km between them isn't counted
+        assertEquals(1000.9, track.totalDistance, 0.1)
+        // 3 % all the way, across the missing elevations, the gap and the 185 m jump
+        val grades = generateSequence(0.0) { it + 5.0 }.takeWhile { it <= track.totalDistance }
+            .map { track.getGradientAtDistance(it) }.toList()
+        assertEquals(3.0, grades.minOrNull()!!, 0.01)
+        assertEquals(3.0, grades.maxOrNull()!!, 0.01)
+    }
+
+    @Test
     fun usesTheRouteWhenThereIsNoTrack() {
         val track = parse(
             """<gpx><rte><name>Planned</name>

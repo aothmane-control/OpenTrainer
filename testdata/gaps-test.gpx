@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic route for testing OpenTrainer with gaps (#6) and missing elevations (#7).
+  Two tracks due north along 7.0000 E, 11 points each, every 0.00045 degrees of latitude (about 50 m):
+    track 1  49.00000-49.00450 N  +3 % from 200.0 m to 215.0 m; every second point has no <ele>
+    track 2  49.04500-49.04950 N  +3 % from 400.0 m to 415.0 m, about 4.5 km further north
+  Expected in the app: name "OpenTrainer gaps test", 22 points, 1.00 km (the gap isn't counted;
+  without that it would be about 5.5 km), elevation 200-415 m, a warning that 5 of 22 points have no
+  elevation, and 2 segments. The grade is 3 % all the way, also across the gap and the 185 m jump.
+-->
+<gpx version="1.1" creator="OpenTrainer test data" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>OpenTrainer gaps test</name>
+    <trkseg>
+      <trkpt lat="49.00000" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.00045" lon="7.0000"></trkpt>
+      <trkpt lat="49.00090" lon="7.0000"><ele>203.0</ele></trkpt>
+      <trkpt lat="49.00135" lon="7.0000"></trkpt>
+      <trkpt lat="49.00180" lon="7.0000"><ele>206.0</ele></trkpt>
+      <trkpt lat="49.00225" lon="7.0000"></trkpt>
+      <trkpt lat="49.00270" lon="7.0000"><ele>209.0</ele></trkpt>
+      <trkpt lat="49.00315" lon="7.0000"></trkpt>
+      <trkpt lat="49.00360" lon="7.0000"><ele>212.0</ele></trkpt>
+      <trkpt lat="49.00405" lon="7.0000"></trkpt>
+      <trkpt lat="49.00450" lon="7.0000"><ele>215.0</ele></trkpt>
+    </trkseg>
+  </trk>
+  <trk>
+    <name>Second stage</name>
+    <trkseg>
+      <trkpt lat="49.04500" lon="7.0000"><ele>400.0</ele></trkpt>
+      <trkpt lat="49.04545" lon="7.0000"><ele>401.5</ele></trkpt>
+      <trkpt lat="49.04590" lon="7.0000"><ele>403.0</ele></trkpt>
+      <trkpt lat="49.04635" lon="7.0000"><ele>404.5</ele></trkpt>
+      <trkpt lat="49.04680" lon="7.0000"><ele>406.0</ele></trkpt>
+      <trkpt lat="49.04725" lon="7.0000"><ele>407.5</ele></trkpt>
+      <trkpt lat="49.04770" lon="7.0000"><ele>409.0</ele></trkpt>
+      <trkpt lat="49.04815" lon="7.0000"><ele>410.5</ele></trkpt>
+      <trkpt lat="49.04860" lon="7.0000"><ele>412.0</ele></trkpt>
+      <trkpt lat="49.04905" lon="7.0000"><ele>413.5</ele></trkpt>
+      <trkpt lat="49.04950" lon="7.0000"><ele>415.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
