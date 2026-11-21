@@ -20,14 +20,14 @@ class VirtualSpeedTest {
 
     @Test
     fun steadyStateOnTheFlatMatchesTheRoadLoad() {
-        // Root of P = v (m g Crr + Cw v²) by bisection
+        // Root of η P = v (m g Crr + Cw v²) by bisection
         var low = 0.0
         var high = 30.0
         repeat(60) {
             val v = (low + high) / 2
-            if (v * (80 * 9.81 * 0.004 + 0.2 * v * v) < 200) low = v else high = v
+            if (v * (80 * 9.81 * 0.004 + 0.2 * v * v) < VirtualSpeed.DRIVETRAIN_EFFICIENCY * 200) low = v else high = v
         }
-        assertEquals(9.5, low, 0.1)
+        assertEquals(9.4, low, 0.1)
         assertEquals(low, ride(200.0, 0.0, 300), low * 0.01)
     }
 

@@ -1090,8 +1090,9 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Workout Paused", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout paused at ${workoutElapsedSeconds}s")
         } else {
-            // Resumed
+            // Resumed; a GPX ride starts again from standstill
             workoutResumedAt = SystemClock.elapsedRealtime()
+            virtualSpeed = 0.0
             pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
             Toast.makeText(this, "Workout Resumed", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout resumed at ${workoutElapsedSeconds}s")
@@ -1590,12 +1591,20 @@ class MainActivity : AppCompatActivity() {
         val gpxTrack = workout.gpxTrack ?: return
         
         // Progress comes from the measured power on the grade the trainer applied, not from its
-        // flywheel speed, so descents coast faster instead of stalling (#5)
+        // flywheel speed, so descents coast faster instead of stalling (#5). Trainers that don't
+        // report power fall back to their own speed, ignoring readings of 100 km/h or more.
+        val data = bluetoothService.trainerData.value
         val previousSpeed = virtualSpeed
-        virtualSpeed = VirtualSpeed.advance(
-            previousSpeed, bluetoothService.trainerData.value.power.toDouble(), currentGrade(gpxTrack),
-            bluetoothService.riderBikeSettings, secondsDelta
-        )
+        virtualSpeed = if (data.hasPower) {
+            VirtualSpeed.advance(
+                previousSpeed, data.power.toDouble(), currentGrade(gpxTrack),
+                bluetoothService.riderBikeSettings, secondsDelta
+            )
+        } else if (data.speed >= 0 && data.speed < 100) {
+            data.speed / 3.6
+        } else {
+            previousSpeed
+        }
         cumulativeDistance += (previousSpeed + virtualSpeed) / 2 * secondsDelta
         val validSpeed = virtualSpeed * 3.6 // km/h, for the log
         
