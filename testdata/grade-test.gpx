@@ -6,7 +6,7 @@
     points  5-10  +6 %  (207.5 m to 222.5 m)
     points 10-15   0 %  (222.5 m)
     points 15-20  -3 %  (222.5 m to 215.0 m)
-  The app averages the grade over +-50 m, so each change ramps over 100 m.
+  The elevations are clean, so the app fits the grade over 20 m and each change ramps over 20 m.
   Expected in the app: 21 points, about 1.0 km, elevation 200-223 m, data HR, Cadence, Power.
   The point without lat after point 10 must be skipped; if it were used, the maximum
   elevation would show 999 m.

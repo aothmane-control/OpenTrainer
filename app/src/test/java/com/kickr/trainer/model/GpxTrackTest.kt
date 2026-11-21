@@ -3,7 +3,11 @@ package com.kickr.trainer.model
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Random
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 class GpxTrackTest {
 
@@ -14,6 +18,31 @@ class GpxTrackTest {
 
     // 3 % for 250 m: 0.00045° of latitude is about 50 m
     private val climb = trackOf(*Array(6) { 49.0 + it * 0.00045 to it * 1.5 })
+
+    // Points 0.00009° of latitude apart (about 10 m), elevation by point index
+    private fun trackOfElevations(count: Int, elevation: (Int) -> Double) =
+        trackOf(*Array(count) { i -> 49.0 + i * 0.00009 to elevation(i) })
+
+    // 20 km on a constant grade with Gaussian elevation noise of σ = 5 m
+    private fun noisyTrack(grade: Double, seed: Long = 1): GpxTrack {
+        val random = Random(seed)
+        return trackOfElevations(2000) { i -> 100 + grade * i * SPACING_M + 5 * random.nextGaussian() }
+    }
+
+    // Every 10 m, at least one grade window away from the ends
+    private fun gradesAwayFromTheEnds(track: GpxTrack): List<Double> =
+        generateSequence(track.gradeWindow) { it + 10.0 }
+            .takeWhile { it <= track.totalDistance - track.gradeWindow }
+            .map { track.getGradientAtDistance(it) }.toList()
+
+    private fun List<Double>.standardDeviation(): Double {
+        val mean = average()
+        return sqrt(sumOf { (it - mean) * (it - mean) } / size)
+    }
+
+    private companion object {
+        const val SPACING_M = 10.009
+    }
 
     // getPointAtDistance() as it was before the binary search, as the reference
     private fun linearPointAtDistance(track: GpxTrack, targetDistance: Double): GpxTrackPoint? {
@@ -64,6 +93,59 @@ class GpxTrackTest {
     fun gradeOfAConstantClimb() {
         // 1.5 m per 50.04 m
         assertEquals(3.0, climb.getGradientAtDistance(125.0), 0.01)
+    }
+
+    @Test
+    fun noisyFlatTrackGivesASteadyGrade() {
+        val track = noisyTrack(grade = 0.0)
+        assertEquals(5.0, track.elevationNoise, 0.5)
+        val grades = gradesAwayFromTheEnds(track)
+        assertTrue("mean ${grades.average()} %", abs(grades.average()) < 0.5)
+        assertTrue("σ ${grades.standardDeviation()} %", grades.standardDeviation() < 1.5)
+    }
+
+    @Test
+    fun noisyClimbKeepsItsGrade() {
+        val grades = gradesAwayFromTheEnds(noisyTrack(grade = 0.06))
+        assertEquals(6.0, grades.average(), 0.5)
+        assertTrue("σ ${grades.standardDeviation()} %", grades.standardDeviation() < 1.0)
+    }
+
+    @Test
+    fun aSingleOutlierBarelyChangesTheGrade() {
+        val cleanClimb = trackOfElevations(300) { i -> 100 + 0.06 * i * SPACING_M }
+        for (track in listOf(noisyTrack(grade = 0.06), cleanClimb)) {
+            val outlier = track.points.size / 2
+            val withOutlier = GpxTrack(track.name, track.points.mapIndexed { i, point ->
+                if (i == outlier) point.copy(elevation = point.elevation!! + 30) else point
+            })
+            val largestChange = generateSequence(0.0) { it + 5.0 }.takeWhile { it <= track.totalDistance }
+                .maxOf { abs(withOutlier.getGradientAtDistance(it) - track.getGradientAtDistance(it)) }
+            assertTrue("changed by $largestChange points", largestChange < 2.0)
+        }
+    }
+
+    @Test
+    fun aClimbIsFeltAtMost10mBeforeItStarts() {
+        // 0 % to 8 % at point 50
+        val track = trackOfElevations(100) { i -> 0.08 * SPACING_M * maxOf(0, i - 50) }
+        assertEquals(20.0, track.gradeWindow, 0.0)
+        val start = track.points[50].distanceFromStart
+        var distance = 0.0
+        while (distance <= start - 10) {
+            assertTrue("at $distance m", track.getGradientAtDistance(distance) < 0.8)
+            distance += 1.0
+        }
+        assertEquals(8.0, track.getGradientAtDistance(start + 10), 0.05)
+    }
+
+    @Test
+    fun aShortSteepRampIsFelt() {
+        // 30 m at 12 % (points 50 to 53) between flat sections
+        val track = trackOfElevations(100) { i -> 0.12 * SPACING_M * (i - 50).coerceIn(0, 3) }
+        val start = track.points[50].distanceFromStart
+        val steepest = (0..30).maxOf { track.getGradientAtDistance(start + it) }
+        assertTrue("steepest $steepest %", steepest >= 8.0)
     }
 
     @Test
