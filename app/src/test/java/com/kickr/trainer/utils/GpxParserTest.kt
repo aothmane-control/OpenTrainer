@@ -21,6 +21,8 @@ class GpxParserTest {
         // The point without lat is skipped, so its 999 m elevation never appears
         assertEquals(21, track.points.size)
         assertEquals(222.5, track.points.maxOf { it.elevation!! }, 0.0)
+        // 0.009° of latitude at 49° N on the WGS-84 ellipsoid; the old spherical distance gave 1001.9 m
+        assertEquals(1000.89, track.withDistances().totalDistance, 0.01)
 
         // <power> sits directly in <extensions>, hr and cad in Garmin's TrackPointExtension
         val first = track.points.first()

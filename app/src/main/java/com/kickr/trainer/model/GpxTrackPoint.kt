@@ -5,12 +5,6 @@
 
 package com.kickr.trainer.model
 
-import org.osmdroid.util.GeoPoint
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
-
 data class GpxTrackPoint(
     val latitude: Double,
     val longitude: Double,
@@ -33,12 +27,15 @@ data class GpxTrack(
     private fun calculateTotalDistance(): Double {
         var distance = 0.0
         for (i in 0 until points.size - 1) {
-            val p1 = GeoPoint(points[i].latitude, points[i].longitude)
-            val p2 = GeoPoint(points[i + 1].latitude, points[i + 1].longitude)
-            distance += p1.distanceToAsDouble(p2)
+            distance += segmentLength(i)
         }
         return distance
     }
+
+    // From point i to point i + 1, on the WGS-84 ellipsoid
+    private fun segmentLength(i: Int) = Wgs84.distance(
+        points[i].latitude, points[i].longitude, points[i + 1].latitude, points[i + 1].longitude
+    )
     
     // Build track with accumulated distances
     fun withDistances(): GpxTrack {
@@ -50,9 +47,7 @@ data class GpxTrack(
         pointsWithDistance.add(points[0].copy(distanceFromStart = 0.0))
         
         for (i in 1 until points.size) {
-            val p1 = GeoPoint(points[i - 1].latitude, points[i - 1].longitude)
-            val p2 = GeoPoint(points[i].latitude, points[i].longitude)
-            accumulatedDistance += p1.distanceToAsDouble(p2)
+            accumulatedDistance += segmentLength(i - 1)
             pointsWithDistance.add(points[i].copy(distanceFromStart = accumulatedDistance))
         }
         
