@@ -118,7 +118,7 @@
     <string name="rolling_resistance">Rolling resistance (Crr)</string>
     <string name="rolling_resistance_help">Road tyres on smooth asphalt about 0.004, gravel about 0.008</string>
     <string name="wind_resistance">Wind resistance (Cw)</string>
-    <string name="wind_resistance_help">Air drag coefficient sent to the trainer. 0.51 is the usual default.</string>
+    <string name="wind_resistance_help">Air density × drag area (ρ·CdA). 0.51 is a CdA of about 0.42 m², upright on the hoods; about 0.37 in the drops.</string>
     <string name="wind_speed">Wind speed</string>
     <string name="wind_speed_help">Positive for headwind, negative for tailwind</string>
     <string name="unit_kg">kg</string>

@@ -20,21 +20,21 @@ class VirtualSpeedTest {
 
     @Test
     fun steadyStateOnTheFlatMatchesTheRoadLoad() {
-        // Root of P = v (m g Crr + Cw v²) by bisection
+        // Root of P = v (m g Crr + ½ Cw v²) by bisection
         var low = 0.0
         var high = 30.0
         repeat(60) {
             val v = (low + high) / 2
-            if (v * (80 * 9.81 * 0.004 + 0.2 * v * v) < 200) low = v else high = v
+            if (v * (80 * 9.81 * 0.004 + 0.5 * 0.2 * v * v) < 200) low = v else high = v
         }
-        assertEquals(9.48, low, 0.01)
+        assertEquals(11.77, low, 0.01)
         assertEquals(low, ride(200.0, 0.0, 300), low * 0.01)
     }
 
     @Test
     fun coastingDownhillSpeedsUpTowardsTerminalVelocity() {
         val theta = atan(-0.06)
-        val terminal = sqrt(80 * 9.81 * (-sin(theta) - 0.004 * cos(theta)) / 0.2)
+        val terminal = sqrt(80 * 9.81 * (-sin(theta) - 0.004 * cos(theta)) / (0.5 * 0.2))
         val after10s = ride(0.0, -6.0, 10, from = 5.0)
         val after300s = ride(0.0, -6.0, 300, from = 5.0)
         assertTrue(after10s > 5.0)
@@ -44,7 +44,8 @@ class VirtualSpeedTest {
 
     @Test
     fun theBikeStopsWithoutPowerButDoesNotRollBack() {
-        assertEquals(0.0, ride(0.0, 0.0, 120, from = 8.0), 0.0)
+        // From 8 m/s it takes about 140 s to roll to a stop
+        assertEquals(0.0, ride(0.0, 0.0, 180, from = 8.0), 0.0)
         assertEquals(0.0, ride(0.0, 8.0, 60, from = 3.0), 0.0)
     }
 

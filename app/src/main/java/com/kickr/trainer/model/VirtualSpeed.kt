@@ -34,11 +34,11 @@ object VirtualSpeed {
         val dt = 1.0 / STEPS_PER_S
         var v = speedMps
         repeat(seconds * STEPS_PER_S) {
-            // Air drag Cw·v² with the Cw in kg/m sent to the trainer. Whether the trainer applies Cw·v²
-            // or ½·Cw·v² is still open (review #8); riding the flat at a steady 30 km/h or more, the
-            // trainer speed in the ride log matches this speed only with Cw·v².
+            // Air drag ½·Cw·v², as the trainer applies the Cw in kg/m it is sent (ρ·CdA): on 0 % a
+            // KICKR CORE took 71 W at 20.8 km/h and 306 W at 36.9 km/h, 0.54 and 0.50 of Cw·v²
+            // (review #8, testdata/flat-test.gpx)
             val air = v + settings.windSpeedMps
-            val force = powerW / maxOf(v, MIN_SPEED_MPS) - slopeForce - settings.windResistance * air * abs(air)
+            val force = powerW / maxOf(v, MIN_SPEED_MPS) - slopeForce - 0.5 * settings.windResistance * air * abs(air)
             // Rolling resistance and climbs stop the bike but don't roll it backwards
             v = maxOf(0.0, v + force / (mass + ROTATING_MASS_KG) * dt)
         }

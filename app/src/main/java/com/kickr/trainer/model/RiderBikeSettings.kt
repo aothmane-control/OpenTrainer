@@ -36,7 +36,7 @@ data class RiderBikeSettings(
         WHEEL_CIRCUMFERENCE("wheel_circumference_mm", 2100.0, 1000.0..3000.0),
         // Crr: good road tyres on asphalt; FTMS carries 0.0001 steps in one byte
         ROLLING_RESISTANCE("rolling_resistance", 0.004, 0.001..0.0255),
-        // Cw in kg/m as sent in FTMS, 0.01 steps in one byte
+        // Cw in kg/m as sent in FTMS, 0.01 steps in one byte: ρ·CdA, so air drag is ½·Cw·v²
         WIND_RESISTANCE("wind_resistance", 0.51, 0.0..2.55),
         // Positive is headwind
         WIND_SPEED("wind_speed_mps", 0.0, -20.0..20.0)
