@@ -119,7 +119,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workoutIntervalTextView: TextView
     private lateinit var workoutResistanceTextView: TextView
     private lateinit var workoutTimeTextView: TextView
-    private lateinit var viewMapButton: Button
     private lateinit var workoutProfileChart: LineChart
     private lateinit var workoutProfileTitleTextView: TextView
     // GPX rides: the route's grade profile, built once per ride
@@ -363,7 +362,6 @@ class MainActivity : AppCompatActivity() {
         workoutIntervalTextView = findViewById(R.id.workoutIntervalTextView)
         workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
-        viewMapButton = findViewById(R.id.viewMapButton)
         workoutProfileChart = findViewById(R.id.workoutProfileChart)
         workoutProfileTitleTextView = findViewById(R.id.workoutProfileTitleTextView)
         mapView = findViewById(R.id.mapView)
@@ -1027,13 +1025,6 @@ class MainActivity : AppCompatActivity() {
         viewGpxButton.setOnClickListener {
             val intent = Intent(this, GpxMapActivity::class.java)
             gpxMapLauncher.launch(intent)
-        }
-        
-        viewMapButton.setOnClickListener {
-            // Open map with current position during GPX workout
-            val intent = Intent(this, GpxMapActivity::class.java)
-            intent.putExtra(GpxMapActivity.EXTRA_CURRENT_DISTANCE, cumulativeDistance)
-            startActivity(intent)
         }
         
         stopWorkoutButton.setOnClickListener {
@@ -1749,7 +1740,6 @@ class MainActivity : AppCompatActivity() {
         
         // The workout cards and controls are shown by updateWorkoutLayout() below
         pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
-        viewMapButton.visibility = View.GONE // Hide the external map button
         
         // Try to show and setup map
         try {

@@ -135,17 +135,6 @@
                         android:textSize="14sp"
                         android:textColor="@color/md_theme_light_onPrimaryContainer"
                         tools:text="Time: 5:00" />
-                    
-                    <Button
-                        android:id="@+id/viewMapButton"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="View Map"
-                        android:visibility="gone"
-                        android:drawableStart="@android:drawable/ic_dialog_map"
-                        android:drawablePadding="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
             

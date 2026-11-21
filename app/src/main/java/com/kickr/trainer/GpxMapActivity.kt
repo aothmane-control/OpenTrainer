@@ -34,18 +34,12 @@ import kotlin.math.min
 
 class GpxMapActivity : AppCompatActivity() {
 
-    companion object {
-        const val EXTRA_GPX_TRACK = "gpx_track"
-        const val EXTRA_CURRENT_DISTANCE = "current_distance"
-    }
-
     private lateinit var mapView: MapView
     private lateinit var loadGpxButton: Button
     private lateinit var riderBikeButton: Button
     private lateinit var startWorkoutButton: Button
     private lateinit var trackInfoTextView: TextView
     private var currentTrack: GpxTrack? = null
-    private var currentPositionMarker: Marker? = null
 
     private val gpxFileLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -66,9 +60,6 @@ class GpxMapActivity : AppCompatActivity() {
         initViews()
         setupMap()
         setupClickListeners()
-        
-        // Check if we're being launched with track data (for live tracking)
-        handleIncomingIntent()
     }
 
     private fun initViews() {
@@ -117,45 +108,6 @@ class GpxMapActivity : AppCompatActivity() {
         }
     }
     
-    private fun handleIncomingIntent() {
-        // Check if launched for live tracking
-        val currentDistance = intent.getDoubleExtra(EXTRA_CURRENT_DISTANCE, -1.0)
-        if (currentDistance >= 0 && GpxWorkoutHolder.currentTrack != null) {
-            currentTrack = GpxWorkoutHolder.currentTrack
-            currentTrack?.let { track ->
-                displayTrackOnMap(track)
-                updateCurrentPosition(currentDistance)
-                startWorkoutButton.visibility = android.view.View.GONE
-                loadGpxButton.visibility = android.view.View.GONE
-                riderBikeButton.visibility = android.view.View.GONE
-            }
-        }
-    }
-    
-    private fun updateCurrentPosition(distanceMeters: Double) {
-        val track = currentTrack ?: return
-        val position = track.getPointAtDistance(distanceMeters)
-        
-        position?.let { point ->
-            // Remove old marker
-            currentPositionMarker?.let { mapView.overlays.remove(it) }
-            
-            // Add new position marker
-            currentPositionMarker = Marker(mapView).apply {
-                this.position = GeoPoint(point.latitude, point.longitude)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                title = "Current Position"
-                snippet = String.format("%.2f km", distanceMeters / 1000)
-                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
-            }
-            mapView.overlays.add(currentPositionMarker)
-            
-            // Center map on current position
-            mapView.controller.animateTo(GeoPoint(point.latitude, point.longitude))
-            mapView.invalidate()
-        }
-    }
-
     private fun loadGpxFile(uri: Uri) {
         loadGpxButton.isEnabled = false
         lifecycleScope.launch {
