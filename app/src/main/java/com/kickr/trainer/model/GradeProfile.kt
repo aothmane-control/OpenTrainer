@@ -13,7 +13,9 @@ object GradeProfile {
     // Longer routes show this much around the rider, so climbs stay readable
     const val WINDOW_M = 10_000.0
     private const val WINDOW_BEHIND_M = 2_000.0
-    // Within what trainers simulate (the KICKR CORE up to 16 %), so bad data can't reach them either
+    // So bad data can't reach the trainer. The KICKR simulates climbs up to 20 %, the KICKR CORE up to
+    // 16 %: on a CORE steeper grades feel like 16 %, while the virtual speed still follows the grade
+    // sent, so the rider climbs them as slowly as on the road.
     const val MIN_GRADE = -15.0
     const val MAX_GRADE = 20.0
     // Percentage points per second, so grade changes don't jolt the rider or the trainer's control loop
