@@ -63,12 +63,7 @@ import com.kickr.trainer.utils.formatWorkoutTime
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.Marker
 
 class MainActivity : AppCompatActivity() {
 
@@ -125,8 +120,7 @@ class MainActivity : AppCompatActivity() {
     private var gradeProfileDataSet: LineDataSet? = null
     private lateinit var mapView: MapView
     private lateinit var mapCard: MaterialCardView
-    private var currentPositionMarker: Marker? = null
-    private var routePolyline: Polyline? = null
+    private lateinit var routeMap: RouteMap
     
     private val powerDataPoints = mutableListOf<Entry>()
     private val speedDataPoints = mutableListOf<Entry>()
@@ -233,13 +227,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize osmdroid configuration BEFORE setContentView
-        Configuration.getInstance().apply {
-            load(this@MainActivity, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this@MainActivity))
-            userAgentValue = "OpenTrainer/1.0"
-            osmdroidBasePath = getExternalFilesDir(null)
-            osmdroidTileCache = File(getExternalFilesDir(null), "osmdroid/tiles")
-        }
+        // Before setContentView(), which creates the map
+        RouteMap.configure(this)
         
         setContentView(R.layout.activity_main)
         applyEdgeToEdgeInsets()
@@ -367,7 +356,9 @@ class MainActivity : AppCompatActivity() {
         mapView = findViewById(R.id.mapView)
         mapCard = findViewById(R.id.mapCard)
         
-        if (!isWorkoutPreview) setupMap()
+        routeMap = RouteMap(mapView)
+        // The compact layout moves the map into its panel and back; onDestroy() detaches it
+        mapView.setDestroyMode(false)
         
         if (workoutStatusCard == null || workoutChartCard == null) {
             Log.e(TAG, "ERROR: Workout cards not found in layout!")
@@ -624,191 +615,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun setupMap() {
-        Log.d(TAG, "Setting up MapView")
-        try {
-            mapView.apply {
-                Log.d(TAG, "MapView instance: $this")
-                
-                // Important: Set tile source FIRST
-                setTileSource(TileSourceFactory.MAPNIK)
-                Log.d(TAG, "Tile source set to MAPNIK")
-                
-                // The compact layout moves the map into its panel and back; onDestroy() detaches it
-                setDestroyMode(false)
-
-                // Enable controls
-                setMultiTouchControls(true)
-                setBuiltInZoomControls(false)
-                
-                // CRITICAL: These settings are essential for tile loading
-                isTilesScaledToDpi = true
-                setUseDataConnection(true)
-                isHorizontalMapRepetitionEnabled = false
-                isVerticalMapRepetitionEnabled = false
-                
-                // Set zoom limits
-                minZoomLevel = 3.0
-                maxZoomLevel = 19.0
-                
-                // Set initial position (Paris) and zoom
-                controller.setZoom(5.0)
-                controller.setCenter(GeoPoint(48.8566, 2.3522))
-                
-                Log.d(TAG, "MapView setup complete, visibility will be: ${View.VISIBLE}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up map", e)
-            e.printStackTrace()
-        }
-    }
-    
-    private fun displayGpxTrackOnMap(track: GpxTrack) {
-        Log.d(TAG, "=== Displaying GPX track on map ===")
-        Log.d(TAG, "Track: ${track.name}, ${track.points.size} points")
-        
-        try {
-            // Ensure map is visible and laid out
-            if (mapView.width == 0 || mapView.height == 0) {
-                Log.w(TAG, "MapView not laid out yet, posting display")
-                mapView.post {
-                    displayGpxTrackOnMap(track)
-                }
-                return
-            }
-            
-            Log.d(TAG, "MapView dimensions: ${mapView.width}x${mapView.height}")
-            
-            // Clear existing overlays
-            mapView.overlays.clear()
-            currentPositionMarker = null
-            routePolyline = null
-            
-            if (track.points.isEmpty()) {
-                Log.w(TAG, "No points in GPX track")
-                return
-            }
-            
-            // Convert to GeoPoints
-            val geoPoints = track.points.map { point ->
-                GeoPoint(point.latitude, point.longitude)
-            }
-            
-            if (geoPoints.isEmpty()) {
-                Log.w(TAG, "No valid geo points")
-                return
-            }
-            
-            Log.d(TAG, "Points range: ${geoPoints.first()} to ${geoPoints.last()}")
-            
-            // Create and add polyline
-            val polyline = Polyline(mapView).apply {
-                setPoints(geoPoints)
-                outlinePaint.color = Color.BLUE
-                outlinePaint.strokeWidth = 10f
-                outlinePaint.isAntiAlias = true
-            }
-            
-            mapView.overlays.add(polyline)
-            routePolyline = polyline
-            
-            Log.d(TAG, "Polyline added, ${mapView.overlays.size} overlays total")
-            
-            // Zoom to show entire route with proper padding
-            if (geoPoints.size > 1) {
-                val bounds = org.osmdroid.util.BoundingBox.fromGeoPoints(geoPoints)
-                Log.d(TAG, "Zooming to bounds: $bounds")
-                
-                // Calculate center point
-                val centerLat = (bounds.latNorth + bounds.latSouth) / 2
-                val centerLon = (bounds.lonEast + bounds.lonWest) / 2
-                val center = GeoPoint(centerLat, centerLon)
-                
-                // Calculate appropriate zoom level to fit the bounds
-                val latSpan = Math.abs(bounds.latNorth - bounds.latSouth)
-                val lonSpan = Math.abs(bounds.lonEast - bounds.lonWest)
-                
-                // Estimate zoom level based on span with better scaling
-                val maxSpan = maxOf(latSpan, lonSpan) * 1.3 // Add 30% padding
-                val zoom = when {
-                    maxSpan > 10.0 -> 6.0
-                    maxSpan > 5.0 -> 7.5
-                    maxSpan > 2.0 -> 9.0
-                    maxSpan > 1.0 -> 10.5
-                    maxSpan > 0.5 -> 11.5
-                    maxSpan > 0.25 -> 12.5
-                    maxSpan > 0.125 -> 13.5
-                    maxSpan > 0.05 -> 14.5
-                    maxSpan > 0.025 -> 15.5
-                    else -> 16.0
-                }
-                
-                Log.d(TAG, "Setting center: $center, zoom: $zoom (span: lat=$latSpan, lon=$lonSpan, max=$maxSpan)")
-                
-                // Set center and zoom
-                mapView.controller.setCenter(center)
-                mapView.controller.setZoom(zoom)
-            } else {
-                // Single point - just center on it
-                mapView.controller.setCenter(geoPoints.first())
-                mapView.controller.setZoom(16.0)
-            }
-            
-            // Force redraw
-            mapView.invalidate()
-            
-            Log.d(TAG, "=== Map display complete ===")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error displaying GPX track on map", e)
-            e.printStackTrace()
-            throw e
-        }
-    }
-    
-    private fun updateMapPosition(distanceMeters: Double) {
-        try {
-            val track = activeWorkout?.gpxTrack ?: return
-            val position = track.getPointAtDistance(distanceMeters) ?: return
-            
-            Log.d(TAG, "Updating map position: distance=${distanceMeters}m, lat=${position.latitude}, lon=${position.longitude}")
-            
-            // Remove old marker
-            currentPositionMarker?.let { mapView.overlays.remove(it) }
-            
-            // Create new marker
-            val geoPoint = GeoPoint(position.latitude, position.longitude)
-            val marker = Marker(mapView).apply {
-                this.position = geoPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "Current Position"
-                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
-            }
-            
-            mapView.overlays.add(marker)
-            currentPositionMarker = marker
-            
-            // Center map on current position with zoom for ~500m x 300m view
-            // At latitude ~45°, zoom level 16 shows roughly 500m width
-            // Adjust based on latitude: higher latitudes need higher zoom
-            val latitude = position.latitude
-            val zoomLevel = when {
-                Math.abs(latitude) > 60 -> 16.5  // Polar regions
-                Math.abs(latitude) > 45 -> 16.0  // Mid latitudes
-                else -> 15.5  // Equatorial regions
-            }
-            
-            mapView.controller.setZoom(zoomLevel)
-            mapView.controller.animateTo(geoPoint)
-            
-            mapView.invalidate()
-            
-            Log.d(TAG, "Map position updated successfully with zoom $zoomLevel")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating map position", e)
-            // Don't crash, just skip map update
-        }
-    }
-
     private fun setupRecyclerView() {
         deviceAdapter = DeviceAdapter { device ->
             bluetoothService.connect(device.device)
@@ -1744,7 +1550,7 @@ class MainActivity : AppCompatActivity() {
         // Try to show and setup map
         try {
             mapCard.visibility = View.VISIBLE
-            displayGpxTrackOnMap(gpxTrack)
+            routeMap.showRoute(gpxTrack)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading map", e)
             Toast.makeText(this, "Map unavailable: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -1801,7 +1607,7 @@ class MainActivity : AppCompatActivity() {
         recordWorkoutData(bluetoothService.trainerData.value, gradient)
         
         // Update map position
-        updateMapPosition(cumulativeDistance)
+        routeMap.showPosition(gpxTrack, cumulativeDistance)
         updateGradeProfileProgress(gpxTrack, cumulativeDistance)
         
         // Update UI

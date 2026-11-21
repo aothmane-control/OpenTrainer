@@ -13,7 +13,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.utils.GpxParser
@@ -22,19 +21,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.Marker
 import java.io.FileNotFoundException
-import kotlin.math.max
-import kotlin.math.min
 
 class GpxMapActivity : AppCompatActivity() {
 
     private lateinit var mapView: MapView
+    private lateinit var routeMap: RouteMap
     private lateinit var loadGpxButton: Button
     private lateinit var riderBikeButton: Button
     private lateinit var startWorkoutButton: Button
@@ -50,15 +43,14 @@ class GpxMapActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Configure osmdroid
-        Configuration.getInstance().load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
-        Configuration.getInstance().userAgentValue = packageName
+        // Before setContentView(), which creates the map
+        RouteMap.configure(this)
         
         setContentView(R.layout.activity_gpx_map)
         applyEdgeToEdgeInsets()
 
         initViews()
-        setupMap()
+        routeMap = RouteMap(mapView)
         setupClickListeners()
     }
 
@@ -68,15 +60,6 @@ class GpxMapActivity : AppCompatActivity() {
         riderBikeButton = findViewById(R.id.riderBikeButton)
         startWorkoutButton = findViewById(R.id.startWorkoutButton)
         trackInfoTextView = findViewById(R.id.trackInfoTextView)
-    }
-
-    private fun setupMap() {
-        mapView.setTileSource(TileSourceFactory.MAPNIK)
-        mapView.setMultiTouchControls(true)
-        mapView.controller.setZoom(13.0)
-        
-        // Default to a central location
-        mapView.controller.setCenter(GeoPoint(51.5074, -0.1278)) // London
     }
 
     private fun setupClickListeners() {
@@ -121,7 +104,7 @@ class GpxMapActivity : AppCompatActivity() {
 
                 if (track != null && track.points.isNotEmpty()) {
                     currentTrack = track
-                    displayTrackOnMap(track)
+                    routeMap.showRoute(track)
                     updateTrackInfo(track)
                     startWorkoutButton.visibility = android.view.View.VISIBLE
                     Toast.makeText(this@GpxMapActivity, "GPX loaded: ${track.name}", Toast.LENGTH_SHORT).show()
@@ -137,68 +120,6 @@ class GpxMapActivity : AppCompatActivity() {
                 loadGpxButton.isEnabled = true
             }
         }
-    }
-
-    private fun displayTrackOnMap(track: GpxTrack) {
-        // Clear existing overlays
-        mapView.overlays.clear()
-
-        // Create polyline for the track
-        val polyline = Polyline().apply {
-            outlinePaint.color = getColor(android.R.color.holo_blue_dark)
-            outlinePaint.strokeWidth = 8f
-        }
-
-        val geoPoints = track.points.map { point ->
-            GeoPoint(point.latitude, point.longitude)
-        }
-        polyline.setPoints(geoPoints)
-        mapView.overlays.add(polyline)
-
-        // Add start marker
-        if (geoPoints.isNotEmpty()) {
-            val startMarker = Marker(mapView).apply {
-                position = geoPoints.first()
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "Start"
-                snippet = track.name
-            }
-            mapView.overlays.add(startMarker)
-
-            // Add end marker
-            if (geoPoints.size > 1) {
-                val endMarker = Marker(mapView).apply {
-                    position = geoPoints.last()
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    title = "End"
-                }
-                mapView.overlays.add(endMarker)
-            }
-        }
-
-        // Calculate bounding box and zoom to fit
-        if (geoPoints.isNotEmpty()) {
-            val bounds = calculateBounds(geoPoints)
-            mapView.zoomToBoundingBox(bounds, true, 100)
-        }
-
-        mapView.invalidate()
-    }
-
-    private fun calculateBounds(points: List<GeoPoint>): org.osmdroid.util.BoundingBox {
-        var minLat = Double.MAX_VALUE
-        var maxLat = -Double.MAX_VALUE
-        var minLon = Double.MAX_VALUE
-        var maxLon = -Double.MAX_VALUE
-
-        points.forEach { point ->
-            minLat = min(minLat, point.latitude)
-            maxLat = max(maxLat, point.latitude)
-            minLon = min(minLon, point.longitude)
-            maxLon = max(maxLon, point.longitude)
-        }
-
-        return org.osmdroid.util.BoundingBox(maxLat, maxLon, minLat, minLon)
     }
 
     private fun updateTrackInfo(track: GpxTrack) {
