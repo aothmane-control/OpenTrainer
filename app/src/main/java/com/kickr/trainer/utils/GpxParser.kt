@@ -13,6 +13,7 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserException
 import java.io.IOException
 import java.io.InputStream
+import kotlin.math.roundToInt
 
 class GpxParser(
     // Unit tests pass a JVM parser, since android.util.Xml only exists on the device
@@ -208,8 +209,9 @@ class GpxParser(
             if (key == null) {
                 readExtensions(parser, extensions)
             } else {
-                // Unreadable values stay missing; 0 would be a real reading
-                readText(parser).trim().toIntOrNull()?.let { extensions[key] = it }
+                // Unreadable values stay missing; 0 would be a real reading. Some apps write decimals.
+                readText(parser).trim().toDoubleOrNull()?.takeIf { it.isFinite() }?.roundToInt()
+                    ?.let { extensions[key] = it }
             }
         }
         

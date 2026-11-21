@@ -90,6 +90,22 @@ class GpxParserTest {
     }
 
     @Test
+    fun decimalExtensionValuesAreRounded() {
+        val track = parse(
+            """<gpx><trk><trkseg>
+                <trkpt lat="49.0" lon="7.0"><extensions>
+                    <power>250.6</power><cad>85.0</cad><hr>NaN</hr>
+                </extensions></trkpt>
+            </trkseg></trk></gpx>"""
+        )!!
+        val point = track.points.single()
+        assertEquals(251, point.power)
+        assertEquals(85, point.cadence)
+        // Not a number, so missing like any other unreadable value
+        assertNull(point.heartRate)
+    }
+
+    @Test
     fun segmentsAndTracksStayApart() {
         val track = parse(
             """<gpx>
