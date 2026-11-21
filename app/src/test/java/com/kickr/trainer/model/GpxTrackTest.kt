@@ -163,6 +163,21 @@ class GpxTrackTest {
     }
 
     @Test
+    fun segmentsAreJoinedWithoutTheGapBetweenThem() {
+        // 500 m at +3 %, then 5 km further north and 285 m higher 500 m at -3 %
+        val climb = trackOfElevations(51) { i -> 100 + 0.03 * i * SPACING_M }.points
+        val descent = trackOfElevations(51) { i -> 400 - 0.03 * i * SPACING_M }.points
+            .map { it.copy(latitude = it.latitude + 0.045, segment = 1) }
+        val joined = GpxTrack("joined", climb + descent).withDistances()
+
+        val segmentLengths = climb.last().distanceFromStart + GpxTrack("descent", descent).withDistances().totalDistance
+        assertEquals(segmentLengths, joined.totalDistance, 1e-6)
+        val steepest = generateSequence(0.0) { it + 1.0 }.takeWhile { it <= joined.totalDistance }
+            .maxOf { abs(joined.getGradientAtDistance(it)) }
+        assertTrue("steepest $steepest %", steepest <= 3.01)
+    }
+
+    @Test
     fun aTrackWithoutElevationIsFlat() {
         val track = GpxTrack(climb.name, climb.points.map { it.copy(elevation = null) })
         assertEquals(0.0, track.getGradientAtDistance(0.0), 0.0)

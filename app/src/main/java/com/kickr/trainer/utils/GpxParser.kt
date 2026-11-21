@@ -22,9 +22,13 @@ class GpxParser(
     companion object {
         private const val TAG = "GpxParser"
     }
+
+    // Counts <trkseg> and <rte> elements, so the track knows where its segments begin
+    private var segment = 0
     
     @Throws(XmlPullParserException::class, IOException::class)
     fun parse(inputStream: InputStream): GpxTrack? {
+        segment = 0
         inputStream.use { stream ->
             val parser: XmlPullParser = newPullParser()
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
@@ -52,14 +56,15 @@ class GpxParser(
                 "trk" -> {
                     val track = readTrack(parser)
                     if (track != null) {
-                        trackName = track.first
+                        // The first track names the file, not the last one
+                        if (points.isEmpty()) trackName = track.first
                         points.addAll(track.second)
                     }
                 }
                 "rte" -> {
                     val route = readRoute(parser)
                     if (route != null) {
-                        routeName = route.first
+                        if (routePoints.isEmpty()) routeName = route.first
                         routePoints.addAll(route.second)
                     }
                 }
@@ -79,6 +84,7 @@ class GpxParser(
     @Throws(XmlPullParserException::class, IOException::class)
     private fun readRoute(parser: XmlPullParser): Pair<String, List<GpxTrackPoint>>? {
         parser.require(XmlPullParser.START_TAG, null, "rte")
+        segment++
         var name = "Unnamed Track"
         val points = mutableListOf<GpxTrackPoint>()
         
@@ -122,6 +128,7 @@ class GpxParser(
     private fun readTrackSegment(parser: XmlPullParser): List<GpxTrackPoint> {
         val points = mutableListOf<GpxTrackPoint>()
         parser.require(XmlPullParser.START_TAG, null, "trkseg")
+        segment++
         
         while (parser.next() != XmlPullParser.END_TAG) {
             if (parser.eventType != XmlPullParser.START_TAG) {
@@ -176,7 +183,7 @@ class GpxParser(
             return null
         }
         
-        return GpxTrackPoint(lat, lon, elevation, time, heartRate, cadence, power)
+        return GpxTrackPoint(lat, lon, elevation, time, heartRate, cadence, power, segment = segment)
     }
     
     @Throws(XmlPullParserException::class, IOException::class)

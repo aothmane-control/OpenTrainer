@@ -17,7 +17,8 @@ data class GpxTrackPoint(
     val heartRate: Int? = null,
     val cadence: Int? = null,
     val power: Int? = null,
-    val distanceFromStart: Double = 0.0  // Accumulated distance in meters
+    val distanceFromStart: Double = 0.0,  // Accumulated distance in meters
+    val segment: Int = 0  // The <trkseg> or <rte> the point belongs to; gaps between them aren't ridden
 )
 
 data class GpxTrack(
@@ -37,8 +38,8 @@ data class GpxTrack(
         return distance
     }
 
-    // From point i to point i + 1, on the WGS-84 ellipsoid
-    private fun segmentLength(i: Int) = Wgs84.distance(
+    // From point i to point i + 1, on the WGS-84 ellipsoid; 0 across the gap to the next segment (#6)
+    private fun segmentLength(i: Int) = if (points[i + 1].segment != points[i].segment) 0.0 else Wgs84.distance(
         points[i].latitude, points[i].longitude, points[i + 1].latitude, points[i + 1].longitude
     )
     
@@ -134,7 +135,17 @@ data class GpxTrack(
 
     // Only the points with an elevation, so the grade is interpolated linearly between the ones on
     // either side of a gap instead of holding one value (#7). Without any elevation the ride is flat.
-    private val profile: GpxTrack by lazy { copy(points = points.filter { it.elevation != null }) }
+    // Each segment continues at the elevation where the one before ended, so the climb or drop across
+    // the gap between them isn't felt either (#6).
+    private val profile: GpxTrack by lazy {
+        var offset = 0.0
+        var previous: GpxTrackPoint? = null
+        copy(points = points.mapNotNull { point ->
+            val elevation = point.elevation ?: return@mapNotNull null
+            previous?.let { if (it.segment != point.segment) offset = (it.elevation ?: elevation) - elevation }
+            point.copy(elevation = elevation + offset).also { previous = it }
+        })
+    }
 
     // The profile with single-point spikes moved onto the line through their neighbours: points further
     // off it than two road grades of up to 35 % could put them, than 3 σ of the noise, and than both

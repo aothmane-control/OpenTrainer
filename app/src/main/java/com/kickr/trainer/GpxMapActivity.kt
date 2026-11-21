@@ -270,6 +270,9 @@ class GpxMapActivity : AppCompatActivity() {
                 append("Warning: no elevation for ${pointCount - elevations.size} of $pointCount points")
                 append(if (elevations.isEmpty()) ", the ride will be flat\n" else "\n")
             }
+            // The map draws straight lines across the gaps, but they add no distance or climb
+            val segments = track.points.distinctBy { it.segment }.size
+            if (segments > 1) append("Segments: $segments, joined without the gaps between them\n")
             
             // Show data availability
             val hasHR = track.points.any { it.heartRate != null }

@@ -75,6 +75,26 @@ class GpxParserTest {
     }
 
     @Test
+    fun segmentsAndTracksStayApart() {
+        val track = parse(
+            """<gpx>
+                <trk><name>Stage 1</name>
+                    <trkseg><trkpt lat="49.0" lon="7.0"/><trkpt lat="49.001" lon="7.0"/></trkseg>
+                    <trkseg><trkpt lat="49.05" lon="7.0"/></trkseg>
+                </trk>
+                <trk><name>Stage 2</name><trkseg><trkpt lat="49.1" lon="7.0"/></trkseg></trk>
+            </gpx>"""
+        )!!
+        // The first track names the file
+        assertEquals("Stage 1", track.name)
+        val segments = track.points.map { it.segment }
+        assertEquals(segments[0], segments[1])
+        assertEquals(3, segments.distinct().size)
+        // Only the 111 m within the first segment count
+        assertEquals(111.2, track.withDistances().totalDistance, 0.1)
+    }
+
+    @Test
     fun fileWithoutPointsGivesNoTrack() {
         assertNull(parse("<gpx><trk><name>Empty</name><trkseg/></trk></gpx>"))
     }
