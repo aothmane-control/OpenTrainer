@@ -153,14 +153,22 @@ data class GpxTrack(
      * where they start, and on noisy ones long enough that the grade noise stays near GRADE_NOISE.
      */
     val gradeWindow: Double by lazy {
-        val elevated = profile.points
-        val spacing = if (elevated.size > 1) {
-            (elevated.last().distanceFromStart - elevated.first().distanceFromStart) / (elevated.size - 1)
-        } else 0.0
         // A least-squares slope over W m with independent points every s m varies by σ·sqrt(12 s) / W^1.5
-        (elevationNoise * sqrt(12 * spacing) / GRADE_NOISE).pow(2.0 / 3)
+        (elevationNoise * sqrt(12 * pointSpacing) / GRADE_NOISE).pow(2.0 / 3)
             .coerceIn(MIN_GRADE_WINDOW_M, MAX_GRADE_WINDOW_M)
     }
+
+    // Mean distance in m between the points with an elevation
+    private val pointSpacing: Double by lazy {
+        val elevated = profile.points
+        if (elevated.size > 1) {
+            (elevated.last().distanceFromStart - elevated.first().distanceFromStart) / (elevated.size - 1)
+        } else 0.0
+    }
+
+    // The fit samples the elevation at the point spacing, so it uses every point as gradeWindow assumes.
+    // Wider steps would skip noisy points; below 1 m it only gets slower.
+    private val sampleStep: Double by lazy { pointSpacing.coerceIn(MIN_SAMPLE_STEP_M, MAX_SAMPLE_STEP_M) }
 
     // Only the points with an elevation, so the grade is interpolated linearly between the ones on
     // either side of a gap instead of holding one value (#7). Without any elevation the ride is flat.
@@ -211,13 +219,13 @@ data class GpxTrack(
     }
 
     /**
-     * Grade in % at a distance: the least-squares slope of the elevation, sampled every 5 m over
-     * gradeWindow centred on the distance and cut at the ends of the route.
+     * Grade in % at a distance: the least-squares slope of the elevation, sampled every 1–5 m (sampleStep)
+     * over gradeWindow centred on the distance and cut at the ends of the route.
      */
     fun getGradientAtDistance(distance: Double): Double {
         val start = (distance - gradeWindow / 2).coerceAtLeast(0.0)
         val end = (distance + gradeWindow / 2).coerceAtMost(totalDistance)
-        val samples = generateSequence(start) { it + SAMPLE_STEP_M }.takeWhile { it <= end }
+        val samples = generateSequence(start) { it + sampleStep }.takeWhile { it <= end }
             .mapNotNull { x -> despiked.getPointAtDistance(x)?.elevation?.let { x to it } }
             .toList()
         if (samples.size < 2) return 0.0
@@ -235,7 +243,8 @@ data class GpxTrack(
     val gradeProfile: List<Pair<Double, Double>> by lazy { GradeProfile.sample(this) }
 
     companion object {
-        private const val SAMPLE_STEP_M = 5.0
+        private const val MIN_SAMPLE_STEP_M = 1.0
+        private const val MAX_SAMPLE_STEP_M = 5.0
         private const val GRADE_NOISE = 0.0075       // 0.75 % standard deviation on noisy elevations
         private const val MIN_GRADE_WINDOW_M = 20.0  // On clean elevations a climb is felt 10 m early
         private const val MAX_GRADE_WINDOW_M = 500.0

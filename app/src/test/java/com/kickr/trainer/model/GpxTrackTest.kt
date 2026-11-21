@@ -133,6 +133,16 @@ class GpxTrackTest {
     }
 
     @Test
+    fun densePointsKeepTheGradeNoiseTheWindowIsSizedFor() {
+        // 20 km with points about 2 m apart, as at one point a second on a slow climb, and σ = 1 m.
+        // The window is sized for a grade noise of 0.75 %.
+        val random = Random(1)
+        val track = trackOf(*Array(10_000) { i -> 49.0 + i * 0.000018 to 100 + random.nextGaussian() })
+        val grades = gradesAwayFromTheEnds(track)
+        assertTrue("σ ${grades.standardDeviation()} %", grades.standardDeviation() < 0.85)
+    }
+
+    @Test
     fun noiseOnDistantPointsIsStillFound() {
         assertEquals(3.0, hillsWithDistantPoints(1001, noise = 3.0).elevationNoise, 0.4)
     }
