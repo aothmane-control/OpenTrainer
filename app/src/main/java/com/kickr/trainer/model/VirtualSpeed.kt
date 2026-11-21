@@ -14,13 +14,14 @@ import kotlin.math.sin
  * The speed a rider would have on the road at the measured power, from the same mass, Crr and Cw
  * the trainer simulates with. A direct-drive trainer's own speed is only its flywheel's, which
  * slows down on descents where a rider outdoors would coast faster.
+ *
+ * All of the measured power drives the bike: a direct-drive trainer measures it at the hub, after
+ * the chain, and simulates the road with it without drivetrain losses.
  */
 object VirtualSpeed {
     private const val G = 9.81
     // Wheels and tyres spinning up add about this much to the mass being accelerated
     private const val ROTATING_MASS_KG = 1.0
-    // Share of the measured power that drives the bike, after chain and bearing losses
-    const val DRIVETRAIN_EFFICIENCY = 0.976
     // Bounds the pedalling force P/v when starting from standstill
     private const val MIN_SPEED_MPS = 0.5
     private const val STEPS_PER_S = 4
@@ -34,7 +35,7 @@ object VirtualSpeed {
         var v = speedMps
         repeat(seconds * STEPS_PER_S) {
             val air = v + settings.windSpeedMps
-            val force = DRIVETRAIN_EFFICIENCY * powerW / maxOf(v, MIN_SPEED_MPS) - slopeForce - settings.windResistance * air * abs(air)
+            val force = powerW / maxOf(v, MIN_SPEED_MPS) - slopeForce - settings.windResistance * air * abs(air)
             // Rolling resistance and climbs stop the bike but don't roll it backwards
             v = maxOf(0.0, v + force / (mass + ROTATING_MASS_KG) * dt)
         }
