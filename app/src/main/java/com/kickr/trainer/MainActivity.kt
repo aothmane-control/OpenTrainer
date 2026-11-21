@@ -478,7 +478,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderCompactWorkout() {
         if (!compactWorkoutView.isVisible) return
-        val data = bluetoothService.trainerData.value
+        val data = withRouteSpeed(bluetoothService.trainerData.value)
         val workout = activeWorkout ?: return compactWorkoutView.updateMetrics(data, currentDistanceKm)
         val track = workout.gpxTrack
         if (track != null) {
@@ -693,7 +693,8 @@ class MainActivity : AppCompatActivity() {
 
         // Observe trainer data
         lifecycleScope.launch {
-            bluetoothService.trainerData.collect { data ->
+            bluetoothService.trainerData.collect { reported ->
+                val data = withRouteSpeed(reported)
                 powerTextView.text = getString(R.string.power_format, data.power)
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
@@ -757,6 +758,11 @@ class MainActivity : AppCompatActivity() {
         speedChart.invalidate()
     }
     
+    // During GPX rides the speed along the route replaces the trainer's flywheel speed, so the speed
+    // shown and recorded matches the distance covered
+    private fun withRouteSpeed(data: TrainerData): TrainerData =
+        if (activeWorkout?.gpxTrack != null) data.copy(speed = (virtualSpeed * 3.6).toFloat()) else data
+
     // Called once per (unpaused) workout second, so averages are time-weighted
     // and independent of how often the trainer sends notifications.
     // GPX rides pass the grade sent to the trainer in that second.
@@ -1086,13 +1092,14 @@ class MainActivity : AppCompatActivity() {
             // Paused
             workoutActiveMillis += SystemClock.elapsedRealtime() - workoutResumedAt
             workoutPausedAtSecond = workoutElapsedSeconds
+            // A GPX ride stands still while paused and starts again from standstill
+            virtualSpeed = 0.0
             pauseResumeWorkoutButton.text = getString(R.string.resume_workout)
             Toast.makeText(this, "Workout Paused", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout paused at ${workoutElapsedSeconds}s")
         } else {
-            // Resumed; a GPX ride starts again from standstill
+            // Resumed
             workoutResumedAt = SystemClock.elapsedRealtime()
-            virtualSpeed = 0.0
             pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
             Toast.makeText(this, "Workout Resumed", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout resumed at ${workoutElapsedSeconds}s")
@@ -1615,8 +1622,8 @@ class MainActivity : AppCompatActivity() {
         val gradient = GradeProfile.limit(gpxTrack.getGradientAtDistance(cumulativeDistance), sentGrade, secondsDelta)
         sentGrade = gradient
 
-        // Record the same grade that is sent to the trainer below
-        recordWorkoutData(bluetoothService.trainerData.value, gradient)
+        // Record the same grade that is sent to the trainer below, and the speed along the route
+        recordWorkoutData(withRouteSpeed(bluetoothService.trainerData.value), gradient)
         
         // Update map position
         routeMap.showPosition(gpxTrack, cumulativeDistance)
