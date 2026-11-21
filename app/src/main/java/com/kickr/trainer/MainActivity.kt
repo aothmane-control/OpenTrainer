@@ -1400,7 +1400,7 @@ class MainActivity : AppCompatActivity() {
 
     // GPX rides: the grade sent to the trainer along the route, over distance in km
     private fun buildGradeProfileChart(track: GpxTrack) {
-        val samples = GradeProfile.sample(track)
+        val samples = track.gradeProfile
         gradeProfileDataSet = profileLineDataSet(
             samples.map { (distance, grade) -> Entry((distance / 1000).toFloat(), grade.toFloat()) },
             "Grade (%)"

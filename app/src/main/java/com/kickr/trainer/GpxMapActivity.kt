@@ -100,6 +100,8 @@ class GpxMapActivity : AppCompatActivity() {
                     val inputStream = contentResolver.openInputStream(uri)
                         ?: throw FileNotFoundException("Failed to open file")
                     GpxParser().parse(inputStream)?.withDistances()
+                        // Also the grade fit along the route, which the ride needs from its first second
+                        ?.also { it.gradeProfile }
                 }
 
                 if (track != null && track.points.isNotEmpty()) {

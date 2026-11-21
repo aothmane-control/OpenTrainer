@@ -228,6 +228,12 @@ data class GpxTrack(
         return slope * 100
     }
 
+    /**
+     * The grade along the route for the profile chart, from GradeProfile.sample(). Up to 1000 fits, so
+     * loading a file computes it in the background rather than starting a ride on the main thread.
+     */
+    val gradeProfile: List<Pair<Double, Double>> by lazy { GradeProfile.sample(this) }
+
     companion object {
         private const val SAMPLE_STEP_M = 5.0
         private const val GRADE_NOISE = 0.0075       // 0.75 % standard deviation on noisy elevations
