@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
     // Scan results are listed until the connection state next changes
     private var showDeviceList = false
     private val isCompactWorkout: Boolean
-        get() = compactLayoutCheckBox.isChecked && activeWorkout?.let { it.gpxTrack == null } == true
+        get() = compactLayoutCheckBox.isChecked && activeWorkout != null
     private lateinit var powerTextView: TextView
     private lateinit var cadenceTextView: TextView
     private lateinit var speedTextView: TextView
@@ -390,7 +390,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         compactWorkoutView = CompactWorkoutView(
-            findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart,
+            findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart, mapView,
             onPause = { togglePauseResumeWorkout() },
             onStop = { stopWorkout() },
             onConnection = {
@@ -417,6 +417,7 @@ class MainActivity : AppCompatActivity() {
                 state is KickrBluetoothService.ConnectionState.Error,
             running = workout != null,
             compact = isCompactWorkout,
+            route = workout?.gpxTrack != null,
             compactConnected = compactLayoutCheckBox.isChecked && workout == null &&
                 state is KickrBluetoothService.ConnectionState.Connected
         )
@@ -429,13 +430,13 @@ class MainActivity : AppCompatActivity() {
     // in place of the classic metric cards, between the setup controls.
     private fun applyLayout(
         linked: Boolean, running: Boolean, compact: Boolean,
-        compactConnected: Boolean = false
+        compactConnected: Boolean = false, route: Boolean = false
     ) {
         fun View.show(visible: Boolean) {
             visibility = if (visible) View.VISIBLE else View.GONE
         }
         placeCompactPanel(inline = compactConnected)
-        compactWorkoutView.setWorkoutMode(compact)
+        compactWorkoutView.setWorkoutMode(compact, route)
         compactWorkoutView.setVisible(compact || compactConnected)
         val classic = !compact
         listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
@@ -488,6 +489,14 @@ class MainActivity : AppCompatActivity() {
         if (!compactWorkoutView.isVisible) return
         val data = bluetoothService.trainerData.value
         val workout = activeWorkout ?: return compactWorkoutView.updateMetrics(data, currentDistanceKm)
+        val track = workout.gpxTrack
+        if (track != null) {
+            compactWorkoutView.renderRoute(
+                track.name, workoutElapsedSeconds, workoutPaused, data, cumulativeDistance,
+                track.totalDistance, currentGrade(track), bluetoothService.connectionState.value
+            )
+            return
+        }
         compactWorkoutView.render(
             workout, workoutElapsedSeconds, workoutPaused, data,
             currentDistanceKm, bluetoothService.connectionState.value
@@ -627,6 +636,9 @@ class MainActivity : AppCompatActivity() {
                 setTileSource(TileSourceFactory.MAPNIK)
                 Log.d(TAG, "Tile source set to MAPNIK")
                 
+                // The compact layout moves the map into its panel and back; onDestroy() detaches it
+                setDestroyMode(false)
+
                 // Enable controls
                 setMultiTouchControls(true)
                 setBuiltInZoomControls(false)
@@ -1727,6 +1739,7 @@ class MainActivity : AppCompatActivity() {
         
         cumulativeDistance = 0.0
         sentGrade = null
+        compactWorkoutView.reset()
         Log.d(TAG, "Grade fitted over %.0f m (elevation noise %.2f m)".format(gpxTrack.gradeWindow, gpxTrack.elevationNoise))
         workoutElapsedSeconds = 0
         workoutStartTime = System.currentTimeMillis()
@@ -1752,8 +1765,7 @@ class MainActivity : AppCompatActivity() {
         
         // Update workout info
         workoutIntervalTextView.text = "GPX: ${gpxTrack.name}"
-        workoutTimeTextView.text = String.format("%.2f / %.2f km", 0.0, gpxTrack.totalDistance / 1000)
-        workoutResistanceTextView.text = getString(R.string.grade_format, GradeProfile.limit(gpxTrack.getGradientAtDistance(0.0), null, 0))
+        renderRouteStatus(gpxTrack)
         
         Toast.makeText(this, "GPX workout started! The trainer follows the route's grade", Toast.LENGTH_LONG).show()
         
@@ -1762,6 +1774,16 @@ class MainActivity : AppCompatActivity() {
             updateGpxWorkout(secondsDelta)
         }
         updateWorkoutLayout()
+    }
+
+    // The grade sent to the trainer; before the first update of a ride, the one that will be sent
+    private fun currentGrade(track: GpxTrack) =
+        sentGrade ?: GradeProfile.limit(track.getGradientAtDistance(cumulativeDistance), null, 0)
+
+    // Progress and grade on the classic workout card; the compact panel shows the same values
+    private fun renderRouteStatus(track: GpxTrack) {
+        workoutTimeTextView.text = getString(R.string.route_progress, currentDistanceKm, track.totalDistance / 1000)
+        workoutResistanceTextView.text = getString(R.string.grade_format, currentGrade(track))
     }
 
     private fun updateGpxWorkout(secondsDelta: Int) {
@@ -1793,12 +1815,7 @@ class MainActivity : AppCompatActivity() {
         updateGradeProfileProgress(gpxTrack, cumulativeDistance)
         
         // Update UI
-        workoutTimeTextView.text = String.format(
-            "%.2f / %.2f km", 
-            cumulativeDistance / 1000, 
-            gpxTrack.totalDistance / 1000
-        )
-        workoutResistanceTextView.text = getString(R.string.grade_format, gradient)
+        renderRouteStatus(gpxTrack)
         
         // Send simulation parameters to trainer with actual gradient
         // This gives more realistic feel than resistance mapping

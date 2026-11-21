@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.text.buildSpannedString
 import androidx.core.text.color
 import androidx.core.text.scale
+import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import com.github.mikephil.charting.charts.LineChart
 import com.google.android.material.color.MaterialColors
@@ -26,6 +27,7 @@ internal class CompactWorkoutView(
     profileChart: LineChart,
     powerChart: LineChart,
     speedChart: LineChart,
+    mapView: View,
     onPause: () -> Unit,
     onStop: () -> Unit,
     onConnection: () -> Unit,
@@ -46,6 +48,7 @@ internal class CompactWorkoutView(
     private val metrics = Metric.entries.toMutableList()
     private val workoutTypeText = root.findViewById<TextView>(R.id.compactWorkoutType)
     private val intervalText = root.findViewById<TextView>(R.id.compactIntervalText)
+    private val timeLabelText = root.findViewById<TextView>(R.id.compactTimeLabel)
     private val workoutTimeText = root.findViewById<TextView>(R.id.compactWorkoutTime)
     private val intervalTimeText = root.findViewById<TextView>(R.id.compactIntervalTime)
     private val currentTargetText = root.findViewById<TextView>(R.id.compactCurrentTarget)
@@ -60,10 +63,11 @@ internal class CompactWorkoutView(
     private val twoDecimals = decimalFormat(2)
     private val tabs = root.findViewById<TabLayout>(R.id.compactChartTabs)
     private val chartContainer = root.findViewById<FrameLayout>(R.id.compactChartContainer)
-    private val charts = listOf(profileChart, powerChart, speedChart)
-    // Where each chart sits in its classic card, so it goes back to the same place and size
+    // The charts and, during GPX rides, the route map, one at a time below the tabs
+    private val panes = listOf(profileChart, powerChart, speedChart, mapView)
+    // Where each pane sits in its classic card, so it goes back to the same place and size
     private class ChartHome(val parent: ViewGroup, val index: Int, val params: ViewGroup.LayoutParams)
-    private val chartHomes = charts.map {
+    private val chartHomes = panes.map {
         val parent = it.parent as ViewGroup
         ChartHome(parent, parent.indexOfChild(it), it.layoutParams)
     }
@@ -102,23 +106,30 @@ internal class CompactWorkoutView(
     fun reset() {
         metrics.clear()
         metrics.addAll(Metric.entries)
-        tabs.getTabAt(0)?.select()
+        tabs.getTabAt(PROFILE_TAB)?.select()
         renderMetrics()
     }
 
-    /** Without a workout there is no timer, target or profile, only live trainer metrics. */
-    fun setWorkoutMode(workout: Boolean) {
+    /**
+     * Without a workout there is no timer, target or profile, only live trainer metrics.
+     * Only GPX rides ([route]) have a map.
+     */
+    fun setWorkoutMode(workout: Boolean, route: Boolean = false) {
         workoutOnlyViews.forEach { it.isVisible = workout }
         root.keepScreenOn = workout
-        tabs.getTabAt(0)?.view?.isVisible = workout
-        if (!workout && tabs.selectedTabPosition == 0) tabs.getTabAt(1)?.select()
+        tabs.getTabAt(PROFILE_TAB)?.view?.isVisible = workout
+        tabs.getTabAt(MAP_TAB)?.view?.isVisible = route
+        if (!workout && tabs.selectedTabPosition == PROFILE_TAB) tabs.getTabAt(POWER_TAB)?.select()
+        if (!route && tabs.selectedTabPosition == MAP_TAB) {
+            tabs.getTabAt(if (workout) PROFILE_TAB else POWER_TAB)?.select()
+        }
         selectChart()
     }
 
     fun setVisible(visible: Boolean) {
         if (isVisible == visible) return
         root.isVisible = visible
-        charts.forEachIndexed { index, chart ->
+        panes.forEachIndexed { index, chart ->
             (chart.parent as ViewGroup).removeView(chart)
             if (visible) {
                 chartContainer.addView(chart, FrameLayout.LayoutParams(
@@ -151,30 +162,80 @@ internal class CompactWorkoutView(
         updateMetrics(trainerData, distanceKm)
         val intervalIndex = workout.getCurrentIntervalIndex(elapsedSeconds)
         val interval = workout.intervals.getOrNull(intervalIndex) ?: return
-        val remaining = workout.getRemainingTime(elapsedSeconds)
-        val intervalRemaining = workout.getIntervalRemainingTime(elapsedSeconds)
-        val typeLabel = if (workout.type == WorkoutType.POWER) R.string.power_mode else R.string.resistance_mode
-        workoutTypeText.text = context.getString(
-            if (paused) R.string.compact_paused else typeLabel
-        )
-        intervalText.text = context.getString(
-            R.string.workout_interval_format, intervalIndex + 1, workout.intervals.size
-        )
-        workoutTimeText.text = context.formatWorkoutTime(remaining)
-        intervalTimeText.text = context.getString(
-            R.string.compact_interval_remaining, context.formatWorkoutTime(intervalRemaining)
-        )
-        currentTargetText.text = if (workout.type == WorkoutType.POWER) {
-            context.getString(R.string.workout_power_format, interval.power)
-        } else {
-            context.getString(R.string.workout_resistance_format, interval.resistance)
-        }
+        val power = workout.type == WorkoutType.POWER
         val next = workout.intervals.getOrNull(intervalIndex + 1)
-        nextTargetText.text = when {
-            next == null -> context.getString(R.string.compact_final_interval)
-            workout.type == WorkoutType.POWER -> context.getString(R.string.compact_next_power, next.power)
-            else -> context.getString(R.string.compact_next_resistance, next.resistance)
-        }
+        showCard(
+            type = if (power) R.string.power_mode else R.string.resistance_mode,
+            title = context.getString(R.string.workout_interval_format, intervalIndex + 1, workout.intervals.size),
+            timeLabel = R.string.compact_workout_remaining,
+            time = context.formatWorkoutTime(workout.getRemainingTime(elapsedSeconds)),
+            detail = context.getString(
+                R.string.compact_interval_remaining,
+                context.formatWorkoutTime(workout.getIntervalRemainingTime(elapsedSeconds))
+            ),
+            next = when {
+                next == null -> context.getString(R.string.compact_final_interval)
+                power -> context.getString(R.string.compact_next_power, next.power)
+                else -> context.getString(R.string.compact_next_resistance, next.resistance)
+            },
+            target = if (power) {
+                context.getString(R.string.workout_power_format, interval.power)
+            } else {
+                context.getString(R.string.workout_resistance_format, interval.resistance)
+            },
+            paused = paused,
+            connection = connection
+        )
+    }
+
+    /** A GPX ride: distance instead of time, and the grade sent to the trainer instead of a target. */
+    fun renderRoute(
+        name: String,
+        elapsedSeconds: Int,
+        paused: Boolean,
+        trainerData: TrainerData,
+        distanceMeters: Double,
+        totalMeters: Double,
+        gradePercent: Double,
+        connection: ConnectionState
+    ) {
+        updateMetrics(trainerData, distanceMeters / 1000)
+        showCard(
+            type = R.string.compact_route,
+            title = name,
+            timeLabel = R.string.compact_distance_remaining,
+            time = context.getString(R.string.distance_format, (totalMeters - distanceMeters) / 1000),
+            detail = context.getString(R.string.compact_route_time, context.formatWorkoutTime(elapsedSeconds)),
+            next = context.getString(R.string.route_progress, distanceMeters / 1000, totalMeters / 1000),
+            target = context.getString(R.string.grade_format, gradePercent),
+            paused = paused,
+            connection = connection
+        )
+    }
+
+    // The header, time card and target line, filled the same way for workouts and routes
+    private fun showCard(
+        type: Int,
+        title: String,
+        timeLabel: Int,
+        time: String,
+        detail: String,
+        next: String,
+        target: String,
+        paused: Boolean,
+        connection: ConnectionState
+    ) {
+        workoutTypeText.setText(if (paused) R.string.compact_paused else type)
+        intervalText.text = title
+        timeLabelText.setText(timeLabel)
+        workoutTimeText.text = time
+        intervalTimeText.text = detail
+        nextTargetText.text = next
+        currentTargetText.text = target
+        renderControls(paused, connection)
+    }
+
+    private fun renderControls(paused: Boolean, connection: ConnectionState) {
         pauseButton.setText(
             if (paused) R.string.compact_resume else R.string.compact_pause
         )
@@ -194,10 +255,11 @@ internal class CompactWorkoutView(
         connectionButton.tooltipText = connectionButton.contentDescription
     }
 
+    // Hidden panes stay laid out: the map only draws the route once it has a size
     private fun selectChart() {
         if (!isVisible) return
-        charts.forEachIndexed { index, chart ->
-            chart.isVisible = index == tabs.selectedTabPosition
+        panes.forEachIndexed { index, chart ->
+            chart.isInvisible = index != tabs.selectedTabPosition
         }
     }
 
@@ -237,5 +299,12 @@ internal class CompactWorkoutView(
         minimumFractionDigits = digits
         maximumFractionDigits = digits
         isGroupingUsed = false
+    }
+
+    private companion object {
+        // Positions in compactChartTabs and in panes
+        const val PROFILE_TAB = 0
+        const val POWER_TAB = 1
+        const val MAP_TAB = 3
     }
 }
