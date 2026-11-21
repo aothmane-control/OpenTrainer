@@ -16,8 +16,9 @@ import java.io.InputStream
 import kotlin.math.roundToInt
 
 class GpxParser(
-    // Unit tests pass a JVM parser, since android.util.Xml only exists on the device
-    private val newPullParser: () -> XmlPullParser = { Xml.newPullParser() }
+    // Unit tests pass a JVM parser and their own warnings, since android.util only exists on the device
+    private val newPullParser: () -> XmlPullParser = { Xml.newPullParser() },
+    private val warn: (String) -> Unit = { Log.w(TAG, it) }
 ) {
     
     companion object {
@@ -180,7 +181,7 @@ class GpxParser(
         // A point without valid coordinates would otherwise be placed at 0,0
         // and add thousands of kilometers to the track distance
         if (lat == null || lon == null) {
-            Log.w(TAG, "Skipping <$tag> without valid lat/lon")
+            warn("Skipping <$tag> without valid lat/lon")
             return null
         }
         

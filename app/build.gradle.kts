@@ -75,11 +75,6 @@ android {
     buildFeatures {
         viewBinding = true
     }
-
-    testOptions {
-        // android.util.Log calls in tested code do nothing instead of throwing
-        unitTests.isReturnDefaultValues = true
-    }
 }
 
 dependencies {

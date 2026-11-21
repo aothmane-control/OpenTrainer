@@ -9,7 +9,7 @@ import java.io.File
 class GpxParserTest {
 
     // KXmlParser is what android.util.Xml returns on the device
-    private val parser = GpxParser { KXmlParser() }
+    private val parser = GpxParser(newPullParser = { KXmlParser() }, warn = {})
 
     private fun parse(gpx: String) = parser.parse(gpx.byteInputStream())
 
