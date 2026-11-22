@@ -371,9 +371,10 @@ class MainActivity : AppCompatActivity() {
         setupCharts()
         setupWorkoutProfileChart()
         compactLayoutCheckBox = findViewById(R.id.compactLayoutCheckBox)
-        // Preview picks its layout from the intent and must never touch the saved preference
+        // Preview picks its layout from the intent and must never touch the saved preference.
+        // Compact unless the user chose the classic layout.
         if (!isWorkoutPreview) {
-            compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, false)
+            compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, true)
             compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
                 getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
                 // The connected screen also follows the layout choice

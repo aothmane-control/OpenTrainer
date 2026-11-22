@@ -67,6 +67,16 @@ class CompactWorkoutTest {
     }
 
     @Test
+    fun compactLayoutIsTheDefault() {
+        preferences.edit().remove(COMPACT_PREFERENCE).commit()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                assertTrue(activity.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked)
+            }
+        }
+    }
+
+    @Test
     fun compactPreferenceMetricSwapTimerAndReturnToClassic() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
