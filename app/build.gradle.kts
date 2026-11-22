@@ -74,6 +74,8 @@ android {
 
     buildFeatures {
         viewBinding = true
+        // BuildConfig.VERSION_NAME for the About dialog
+        buildConfig = true
     }
 }
 
