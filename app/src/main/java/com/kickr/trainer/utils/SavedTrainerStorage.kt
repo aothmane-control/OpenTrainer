@@ -65,9 +65,8 @@ class SavedTrainerStorage(context: Context) {
         JSONObject(preferences.getString("trainers", null) ?: "{}")
 
     private fun parseTrainer(address: String, json: JSONObject): Trainer? {
-        val range = ResistanceRange(json.getInt("minimum"), json.getInt("maximum"), json.getInt("increment"))
-        // Same checks as for the value the trainer reports
-        if (address.isBlank() || range.maximum <= range.minimum || range.increment < 1) return null
+        val range = ResistanceRange.of(json.getInt("minimum"), json.getInt("maximum"), json.getInt("increment"))
+            ?: return null
         return Trainer(address, json.optString("name").ifBlank { address }, range)
     }
 

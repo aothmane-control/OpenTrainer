@@ -62,7 +62,9 @@ class SavedTrainerStorageTest {
             "AA:BB:CC:DD:EE:07":false
         }""").putString("last_connected", "AA:BB:CC:DD:EE:06").commit()
         val unnamed = Trainer("AA:BB:CC:DD:EE:03", "AA:BB:CC:DD:EE:03", ResistanceRange(0, 100, 1))
-        assertEquals(listOf(unnamed, kickr), storage.loadAll())
+        // Like a trainer reporting an increment of 0
+        val noIncrement = Trainer("AA:BB:CC:DD:EE:05", "No increment", ResistanceRange(0, 100, 1))
+        assertEquals(listOf(unnamed, kickr, noIncrement), storage.loadAll())
         assertNull(storage.lastConnected)
     }
 
