@@ -99,6 +99,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // The XmlPullParser behind android.util.Xml, so GpxParser runs in unit tests
     testImplementation("net.sf.kxml:kxml2:2.3.0")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    // 3.6 and later click on current Android versions; 3.5 looked up a removed InputManager method
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
