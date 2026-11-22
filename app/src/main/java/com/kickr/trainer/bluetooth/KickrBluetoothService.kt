@@ -813,7 +813,8 @@ class KickrBluetoothService(private val context: Context) {
             
             // Instantaneous Power - if bit 6 is set
             if (flags and 0x40 != 0 && buffer.remaining() >= 2) {
-                currentPower = buffer.getShort().toInt() and 0xFFFF // Already in watts
+                // SINT16 in watts; a trainer may report a few negative watts, e.g. when backpedalling
+                currentPower = buffer.getShort().toInt().coerceAtLeast(0)
                 powerReported = true
             }
             
