@@ -117,6 +117,7 @@ class KickrBluetoothService(private val context: Context) {
     private var gattOperationInProgress = false
     
     data class ControlPointResponse(val requestOpcode: Int, val resultCode: Int) {
+        val isSuccess get() = resultCode == 0x01
         val resultName get() = when (resultCode) {
             0x01 -> "Success"
             0x02 -> "Op Code Not Supported"
@@ -240,7 +241,7 @@ class KickrBluetoothService(private val context: Context) {
                             )
                         }
                         // Every command is answered, so only the ones the trainer rejects are logged
-                        if (response.resultCode == 0x01) verbose(message) else Log.w(TAG, message())
+                        if (response.isSuccess) verbose(message) else Log.w(TAG, message())
                         _controlPointResponses.tryEmit(response)
                     } else {
                         Log.w(TAG, "Unexpected control point indication: ${value.toHex()}")

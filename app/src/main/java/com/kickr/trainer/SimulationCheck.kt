@@ -23,7 +23,6 @@ import kotlin.math.abs
  */
 internal object SimulationCheck {
     private const val TAG = "SimulationCheck"
-    private const val SIMULATION_OPCODE = 0x11
     private const val TIMEOUT_MS = 3000L
     // Unusual on purpose, so the trainer's confirmation can't be left over from a GPX ride
     private const val TEST_GRADE = 1.5
@@ -51,7 +50,7 @@ internal object SimulationCheck {
         val (response, applied) = coroutineScope {
             val response = async(start = CoroutineStart.UNDISPATCHED) {
                 withTimeoutOrNull(TIMEOUT_MS) {
-                    service.controlPointResponses.first { it.requestOpcode == SIMULATION_OPCODE }
+                    service.controlPointResponses.first { it.requestOpcode == SimulationParameters.COMMAND_OPCODE }
                 }
             }
             val applied = async(start = CoroutineStart.UNDISPATCHED) {
@@ -81,7 +80,7 @@ internal object SimulationCheck {
         }
         report("Rider weight can be set (User Data 0x2A98): ${yesNo(service.hasWeightCharacteristic)}")
 
-        val accepted = response?.resultCode == 0x01
+        val accepted = response?.isSuccess == true
         report(when {
             accepted -> "Result: simulation mode supported"
             features?.supportsSimulation == true -> "Result: advertised, but the command was not accepted"
