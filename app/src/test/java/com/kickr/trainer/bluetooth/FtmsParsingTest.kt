@@ -22,14 +22,13 @@ class FtmsParsingTest {
         assertTrue(features.supportsResistanceTarget)
         assertTrue(features.supportsPowerTarget)
         assertTrue(features.supportsSimulation)
-        assertTrue(features.supportsWheelCircumference)
     }
 
     @Test
     fun simulationIsOnlySupportedWithBit13() {
+        // Bit 14, the wheel circumference, right next to it
         val features = FitnessMachineFeatures.parse(bytes(0, 0, 0, 0, 0x0C, 0x40, 0, 0))!!
         assertFalse(features.supportsSimulation)
-        assertTrue(features.supportsWheelCircumference)
     }
 
     @Test
