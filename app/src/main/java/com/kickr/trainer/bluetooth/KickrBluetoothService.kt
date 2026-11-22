@@ -287,7 +287,8 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Supported resistance level range: $range")
                     reportConnectedTrainer(gatt, range)
                 } else {
-                    // Not reported, so levels saved from an earlier connection are kept
+                    // Not reported as the connected trainer, so the levels saved for it at an earlier
+                    // connection aren't overwritten with these
                     Log.w(TAG, "Unusable resistance level range (status=$status), keeping levels 0-100")
                 }
             }
@@ -813,7 +814,8 @@ class KickrBluetoothService(private val context: Context) {
             
             // Instantaneous Power - if bit 6 is set
             if (flags and 0x40 != 0 && buffer.remaining() >= 2) {
-                currentPower = buffer.getShort().toInt() and 0xFFFF // Already in watts
+                // SINT16 in watts; a trainer may report a few negative watts, e.g. when backpedalling
+                currentPower = buffer.getShort().toInt().coerceAtLeast(0)
                 powerReported = true
             }
             

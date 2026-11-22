@@ -12,6 +12,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.kickr.trainer.bluetooth.ResistanceRange
 import com.kickr.trainer.bluetooth.Trainer
 import com.kickr.trainer.utils.SavedTrainerStorage
+import com.kickr.trainer.utils.SavedWorkoutStorage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -24,6 +25,8 @@ class WorkoutSetupTest {
     private val preferences = context.getSharedPreferences("saved_trainers", 0)
     private var previousTrainers: String? = null
     private var previousLastConnected: String? = null
+    private val kickr = Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1))
+    private val other = Trainer("AA:BB:CC:DD:EE:02", "Another trainer", ResistanceRange(10, 240, 10))
 
     @Before
     fun saveUserTrainers() {
@@ -32,8 +35,8 @@ class WorkoutSetupTest {
         preferences.edit().remove("trainers").commit()
         // The trainer saved last is the one that connected last
         SavedTrainerStorage(context).apply {
-            save(Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1)))
-            save(Trainer("AA:BB:CC:DD:EE:02", "Another trainer", ResistanceRange(10, 240, 10)))
+            save(kickr)
+            save(other)
         }
     }
 
@@ -53,13 +56,44 @@ class WorkoutSetupTest {
         return ActivityScenario.launch(intent)
     }
 
-    // A complete one-minute workout at level 5
-    private fun WorkoutSetupActivity.enterCompleteWorkout() {
+    // A complete one-minute workout at one level
+    private fun WorkoutSetupActivity.enterCompleteWorkout(level: Int = 5) {
         findViewById<EditText>(R.id.totalDurationEditText).setText("1")
         findViewById<Button>(R.id.setDurationButton).performClick()
         findViewById<EditText>(R.id.intervalDurationEditText).setText("1")
-        findViewById<EditText>(R.id.intervalResistanceEditText).setText("5")
+        findViewById<EditText>(R.id.intervalResistanceEditText).setText("$level")
         findViewById<Button>(R.id.addIntervalButton).performClick()
+    }
+
+    // Picks a saved trainer as the user does in the dropdown, which lists them by name
+    private fun WorkoutSetupActivity.selectTrainer(trainer: Trainer) {
+        val selector = findViewById<MaterialAutoCompleteTextView>(R.id.trainerSelector)
+        selector.onItemClickListener.onItemClick(null, null, listOf(other, kickr).indexOf(trainer), 0)
+    }
+
+    @Test
+    fun intervalsOutsideTheSelectedTrainersLevelsAreNotSaved() {
+        // Unique, so a failing test can't touch the user's own workouts; removed again below
+        val name = "WorkoutSetupTest out of range"
+        val workouts = SavedWorkoutStorage(context)
+        SavedTrainerStorage(context).save(kickr)
+        try {
+            launch(connected = false).use { scenario ->
+                scenario.onActivity { activity ->
+                    activity.findViewById<EditText>(R.id.workoutNameEditText).setText(name)
+                    activity.enterCompleteWorkout(level = 80)
+                    activity.selectTrainer(other)
+                    activity.findViewById<Button>(R.id.saveWorkoutButton).performClick()
+                    assertFalse("Level 80 is beyond levels 1-24", name in workouts.names())
+
+                    activity.selectTrainer(kickr)
+                    activity.findViewById<Button>(R.id.saveWorkoutButton).performClick()
+                    assertTrue(name in workouts.names())
+                }
+            }
+        } finally {
+            workouts.delete(name)
+        }
     }
 
     @Test

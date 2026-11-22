@@ -106,6 +106,21 @@ class GpxParserTest {
     }
 
     @Test
+    fun coordinatesAndElevationsThatAreNotFiniteAreMissing() {
+        val track = parse(
+            """<gpx><trk><trkseg>
+                <trkpt lat="49.0" lon="7.0"><ele>NaN</ele></trkpt>
+                <trkpt lat="49.001" lon="7.0"><ele>-Infinity</ele></trkpt>
+                <trkpt lat="NaN" lon="7.0"><ele>100</ele></trkpt>
+            </trkseg></trk></gpx>"""
+        )!!.withDistances()
+        // The point without a usable latitude is skipped like one without any
+        assertEquals(listOf(null, null), track.points.map { it.elevation })
+        assertEquals(111.2, track.totalDistance, 0.1)
+        assertEquals(0.0, track.getGradientAtDistance(50.0), 0.0)
+    }
+
+    @Test
     fun segmentsAndTracksStayApart() {
         val track = parse(
             """<gpx>
