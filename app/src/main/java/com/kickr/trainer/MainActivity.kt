@@ -53,14 +53,14 @@ import com.kickr.trainer.model.GradeProfile
 import com.kickr.trainer.model.VirtualSpeed
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
-import kotlin.math.ceil
-import kotlin.math.floor
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.SavedTrainerStorage
 import com.kickr.trainer.utils.RiderBikeSettingsStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
+import com.kickr.trainer.utils.fitGrades
+import com.kickr.trainer.utils.profileLineDataSet
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -1404,18 +1404,6 @@ class MainActivity : AppCompatActivity() {
         workoutProfileChart.invalidate()
     }
     
-    // Target or grade along the workout, shared by timed workouts and GPX rides
-    private fun profileLineDataSet(entries: List<Entry>, label: String) = LineDataSet(entries, label).apply {
-        color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-        lineWidth = 3f
-        setDrawCircles(false)
-        setDrawValues(false)
-        mode = LineDataSet.Mode.LINEAR
-        setDrawFilled(true)
-        fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
-        fillAlpha = 50
-    }
-
     // Dashed vertical line where the rider is now
     private fun positionLineDataSet(x: Float, yMin: Float, yMax: Float) =
         LineDataSet(listOf(Entry(x, yMin), Entry(x, yMax)), "Current Position").apply {
@@ -1435,11 +1423,8 @@ class MainActivity : AppCompatActivity() {
             "Grade (%)"
         )
         workoutProfileTitleTextView.setText(R.string.grade_profile)
-        // Whole percent with a margin, always including 0 %
-        val grades = samples.map { it.second }
         workoutProfileChart.axisLeft.apply {
-            axisMinimum = floor(minOf(0.0, grades.minOrNull() ?: 0.0)).toFloat() - 1f
-            axisMaximum = ceil(maxOf(0.0, grades.maxOrNull() ?: 0.0)).toFloat() + 1f
+            fitGrades(samples.map { it.second.toFloat() })
             granularity = 1f
             setLabelCount(6, false)
         }

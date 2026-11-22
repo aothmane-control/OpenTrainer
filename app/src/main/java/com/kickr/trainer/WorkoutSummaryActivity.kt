@@ -20,8 +20,8 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
-import kotlin.math.ceil
-import kotlin.math.floor
+import com.kickr.trainer.utils.fitGrades
+import com.kickr.trainer.utils.profileLineDataSet
 
 class WorkoutSummaryActivity : AppCompatActivity() {
 
@@ -178,7 +178,7 @@ class WorkoutSummaryActivity : AppCompatActivity() {
         }
 
         val label = if (isPowerWorkout) "Target Power (W)" else "Resistance (level)"
-        val dataSet = profileDataSet(entries, label)
+        val dataSet = profileLineDataSet(entries, label, width = 2f)
 
         // Calculate 110% of max value for better visualization (never a zero-height axis)
         val maxValue = workout.dataPoints.maxOfOrNull { targetOf(it) }?.toFloat() ?: 100f
@@ -205,24 +205,11 @@ class WorkoutSummaryActivity : AppCompatActivity() {
         }
         title.setText(R.string.grade_profile)
 
-        resistanceHistoryChart.data = LineData(profileDataSet(grades, "Grade (%)"))
+        resistanceHistoryChart.data = LineData(profileLineDataSet(grades, "Grade (%)", width = 2f))
         resistanceHistoryChart.xAxis.axisMinimum = 0f
         resistanceHistoryChart.xAxis.axisMaximum = workout.getDurationSeconds().toFloat()
-        // Whole percent with a margin, always including 0 % so descents show below the line
-        resistanceHistoryChart.axisLeft.axisMinimum = floor(minOf(0f, grades.minOf { it.y })) - 1f
-        resistanceHistoryChart.axisLeft.axisMaximum = ceil(maxOf(0f, grades.maxOf { it.y })) + 1f
+        resistanceHistoryChart.axisLeft.fitGrades(grades.map { it.y })
         resistanceHistoryChart.invalidate()
-    }
-
-    private fun profileDataSet(entries: List<Entry>, label: String) = LineDataSet(entries, label).apply {
-        color = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_dark)
-        lineWidth = 2f
-        setDrawCircles(false)
-        setDrawValues(false)
-        mode = LineDataSet.Mode.LINEAR
-        setDrawFilled(true)
-        fillColor = ContextCompat.getColor(this@WorkoutSummaryActivity, android.R.color.holo_blue_light)
-        fillAlpha = 50
     }
 
     private fun setupClickListeners() {
