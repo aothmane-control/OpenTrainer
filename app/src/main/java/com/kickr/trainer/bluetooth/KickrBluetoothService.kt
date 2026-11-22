@@ -287,7 +287,8 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Supported resistance level range: $range")
                     reportConnectedTrainer(gatt, range)
                 } else {
-                    // Not reported, so levels saved from an earlier connection are kept
+                    // Not reported as the connected trainer, so the levels saved for it at an earlier
+                    // connection aren't overwritten with these
                     Log.w(TAG, "Unusable resistance level range (status=$status), keeping levels 0-100")
                 }
             }
