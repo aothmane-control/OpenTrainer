@@ -495,7 +495,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderCompactWorkout() {
         if (!compactWorkoutView.isVisible) return
-        val data = withRouteSpeed(bluetoothService.trainerData.value)
+        val data = shownTrainerData
         val workout = activeWorkout ?: return compactWorkoutView.updateMetrics(data, currentDistanceKm)
         val track = workout.gpxTrack
         if (track != null) {
@@ -717,8 +717,8 @@ class MainActivity : AppCompatActivity() {
 
         // Observe trainer data
         lifecycleScope.launch {
-            bluetoothService.trainerData.collect { reported ->
-                val data = withRouteSpeed(reported)
+            bluetoothService.trainerData.collect {
+                val data = shownTrainerData
                 powerTextView.text = getString(R.string.power_format, data.power)
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
@@ -782,16 +782,20 @@ class MainActivity : AppCompatActivity() {
         speedChart.invalidate()
     }
     
-    // During GPX rides the speed along the route replaces the trainer's flywheel speed, so the speed
-    // shown and recorded matches the distance covered
-    private fun withRouteSpeed(data: TrainerData): TrainerData =
-        if (activeWorkout?.gpxTrack != null) data.copy(speed = (virtualSpeed * 3.6).toFloat()) else data
+    // The trainer's data as shown and recorded. During GPX rides the speed along the route replaces the
+    // trainer's flywheel speed, so the speed matches the distance covered. The ride's physics read the
+    // trainer's own values.
+    private val shownTrainerData: TrainerData
+        get() = bluetoothService.trainerData.value.let { data ->
+            if (activeWorkout?.gpxTrack != null) data.copy(speed = (virtualSpeed * 3.6).toFloat()) else data
+        }
 
     // Called once per (unpaused) workout second, so averages are time-weighted
     // and independent of how often the trainer sends notifications.
     // GPX rides pass the grade sent to the trainer in that second.
-    private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData, grade: Double? = null) {
+    private fun recordWorkoutData(grade: Double? = null) {
         if (activeWorkout == null || workoutStartTime == 0L) return
+        val data = shownTrainerData
 
         // GPX rides control the trainer by grade, which is recorded instead of a resistance level
         val currentResistance = activeWorkout?.let { workout ->
@@ -1250,7 +1254,7 @@ class MainActivity : AppCompatActivity() {
                 cumulativeDistance += distancePerSecond * secondsDelta
             }
 
-            recordWorkoutData(bluetoothService.trainerData.value)
+            recordWorkoutData()
             
             val currentIndex = workout.getCurrentIntervalIndex(workoutElapsedSeconds)
             if (currentIndex >= 0) {
@@ -1635,8 +1639,8 @@ class MainActivity : AppCompatActivity() {
         val gradient = GradeProfile.limit(gpxTrack.getGradientAtDistance(cumulativeDistance), sentGrade, secondsDelta)
         sentGrade = gradient
 
-        // Record the same grade that is sent to the trainer below, and the speed along the route
-        recordWorkoutData(withRouteSpeed(bluetoothService.trainerData.value), gradient)
+        // Record the same grade that is sent to the trainer below
+        recordWorkoutData(gradient)
         
         // Update map position
         routeMap.showPosition(gpxTrack, cumulativeDistance)
