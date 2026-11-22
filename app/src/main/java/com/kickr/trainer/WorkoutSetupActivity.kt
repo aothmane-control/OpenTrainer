@@ -21,7 +21,7 @@ import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.kickr.trainer.adapter.IntervalAdapter
-import com.kickr.trainer.model.SavedTrainer
+import com.kickr.trainer.bluetooth.Trainer
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
@@ -59,7 +59,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     // Without a connected trainer, workouts can be set up and saved but not started
     private val trainerConnected by lazy { intent.getBooleanExtra("trainer_connected", true) }
     // Trainers to take the resistance levels from when none is connected
-    private var savedTrainers = emptyList<SavedTrainer>()
+    private var savedTrainers = emptyList<Trainer>()
     // Lowest and highest resistance level of the connected or the selected saved trainer
     private var minResistance = 0
     private var maxResistance = 100
@@ -175,7 +175,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
         selectTrainer(trainer)
     }
 
-    private fun selectTrainer(trainer: SavedTrainer) {
+    private fun selectTrainer(trainer: Trainer) {
         trainerSelector.setText(trainer.name, false)
         minResistance = trainer.resistanceRange.minLevel
         maxResistance = trainer.resistanceRange.maxLevel

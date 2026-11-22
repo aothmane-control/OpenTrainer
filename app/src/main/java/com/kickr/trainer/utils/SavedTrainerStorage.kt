@@ -8,7 +8,7 @@ package com.kickr.trainer.utils
 import android.content.Context
 import android.util.Log
 import com.kickr.trainer.bluetooth.ResistanceRange
-import com.kickr.trainer.model.SavedTrainer
+import com.kickr.trainer.bluetooth.Trainer
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -16,13 +16,13 @@ class SavedTrainerStorage(context: Context) {
     private val preferences = context.getSharedPreferences("saved_trainers", Context.MODE_PRIVATE)
 
     // The trainer that connected last, if it is still saved
-    val lastConnected: SavedTrainer?
+    val lastConnected: Trainer?
         get() = preferences.getString("last_connected", null)?.let { address ->
             loadAll().find { it.address == address }
         }
 
     // Sorted by name; unreadable entries are skipped
-    fun loadAll(): List<SavedTrainer> {
+    fun loadAll(): List<Trainer> {
         val trainersJson = try {
             readTrainers()
         } catch (e: JSONException) {
@@ -41,7 +41,7 @@ class SavedTrainerStorage(context: Context) {
 
     // Adds the trainer or updates its name and levels, and remembers it as the last one connected.
     // Trainers are learned again when they connect, so an unreadable list is replaced.
-    fun save(trainer: SavedTrainer) {
+    fun save(trainer: Trainer) {
         val trainers = try {
             readTrainers()
         } catch (e: JSONException) {
@@ -64,11 +64,11 @@ class SavedTrainerStorage(context: Context) {
     private fun readTrainers(): JSONObject =
         JSONObject(preferences.getString("trainers", null) ?: "{}")
 
-    private fun parseTrainer(address: String, json: JSONObject): SavedTrainer? {
+    private fun parseTrainer(address: String, json: JSONObject): Trainer? {
         val range = ResistanceRange(json.getInt("minimum"), json.getInt("maximum"), json.getInt("increment"))
         // Same checks as for the value the trainer reports
         if (address.isBlank() || range.maximum <= range.minimum || range.increment < 1) return null
-        return SavedTrainer(address, json.optString("name").ifBlank { address }, range)
+        return Trainer(address, json.optString("name").ifBlank { address }, range)
     }
 
     companion object {

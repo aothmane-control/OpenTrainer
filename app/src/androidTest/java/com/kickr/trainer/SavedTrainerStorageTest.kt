@@ -3,7 +3,7 @@ package com.kickr.trainer
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kickr.trainer.bluetooth.ResistanceRange
-import com.kickr.trainer.model.SavedTrainer
+import com.kickr.trainer.bluetooth.Trainer
 import com.kickr.trainer.utils.SavedTrainerStorage
 import org.junit.After
 import org.junit.Assert.*
@@ -17,8 +17,8 @@ class SavedTrainerStorageTest {
     private val context = InstrumentationRegistry.getInstrumentation().context
     private val preferences = context.getSharedPreferences("saved_trainers", 0)
     private val storage = SavedTrainerStorage(context)
-    private val kickr = SavedTrainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1))
-    private val other = SavedTrainer("AA:BB:CC:DD:EE:02", "Another trainer", ResistanceRange(10, 240, 10))
+    private val kickr = Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1))
+    private val other = Trainer("AA:BB:CC:DD:EE:02", "Another trainer", ResistanceRange(10, 240, 10))
 
     @Before
     fun setUp() { preferences.edit().clear().commit() }
@@ -61,7 +61,7 @@ class SavedTrainerStorageTest {
             "AA:BB:CC:DD:EE:06":{"name":"No levels"},
             "AA:BB:CC:DD:EE:07":false
         }""").putString("last_connected", "AA:BB:CC:DD:EE:06").commit()
-        val unnamed = SavedTrainer("AA:BB:CC:DD:EE:03", "AA:BB:CC:DD:EE:03", ResistanceRange(0, 100, 1))
+        val unnamed = Trainer("AA:BB:CC:DD:EE:03", "AA:BB:CC:DD:EE:03", ResistanceRange(0, 100, 1))
         assertEquals(listOf(unnamed, kickr), storage.loadAll())
         assertNull(storage.lastConnected)
     }
