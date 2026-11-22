@@ -50,6 +50,16 @@ class VirtualSpeedTest {
     }
 
     @Test
+    fun theLowestWindResistanceStillLimitsTheSpeedOnDescents() {
+        val slippery = settings.copy(windResistance = RiderBikeSettings.Parameter.WIND_RESISTANCE.range.start)
+        val theta = atan(-0.15)
+        val terminal = sqrt(80 * 9.81 * (-sin(theta) - 0.004 * cos(theta)) / (0.5 * slippery.windResistance))
+        // About 170 km/h, reached and kept however long the descent lasts
+        assertEquals(terminal, VirtualSpeed.advance(0.0, 0.0, -15.0, slippery, 600), terminal * 0.01)
+        assertEquals(terminal, VirtualSpeed.advance(0.0, 0.0, -15.0, slippery, 3600), terminal * 0.01)
+    }
+
+    @Test
     fun headwindSlowsTheRider() {
         val headwind = settings.copy(windSpeedMps = 5.0)
         assertTrue(VirtualSpeed.advance(0.0, 200.0, 0.0, headwind, 300) < ride(200.0, 0.0, 300))
