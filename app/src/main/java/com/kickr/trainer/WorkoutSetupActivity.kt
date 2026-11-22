@@ -49,6 +49,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     private lateinit var cancelButton: Button
     private lateinit var saveWorkoutButton: Button
     private lateinit var loadWorkoutButton: Button
+    private lateinit var deleteWorkoutButton: Button
 
     private lateinit var intervalAdapter: IntervalAdapter
     private val intervals = mutableListOf<WorkoutInterval>()
@@ -99,6 +100,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
         cancelButton = findViewById(R.id.cancelButton)
         saveWorkoutButton = findViewById(R.id.saveWorkoutButton)
         loadWorkoutButton = findViewById(R.id.loadWorkoutButton)
+        deleteWorkoutButton = findViewById(R.id.deleteWorkoutButton)
     }
 
     private fun setupRecyclerView() {
@@ -159,7 +161,11 @@ class WorkoutSetupActivity : AppCompatActivity() {
         }
         
         loadWorkoutButton.setOnClickListener {
-            loadWorkout()
+            pickSavedWorkout(R.string.load_workout) { loadWorkoutByName(it) }
+        }
+
+        deleteWorkoutButton.setOnClickListener {
+            pickSavedWorkout(R.string.delete_workout) { confirmDeleteWorkout(it) }
         }
     }
     
@@ -407,7 +413,9 @@ class WorkoutSetupActivity : AppCompatActivity() {
         }
     }
     
-    private fun loadWorkout() {
+    // Lists the saved workouts under the title of the button that opened it, Load Workout or
+    // Delete Workout, and hands on the one picked
+    private fun pickSavedWorkout(title: Int, onPick: (String) -> Unit) {
         try {
             val workoutNames = savedWorkoutStorage.names()
             
@@ -416,31 +424,14 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 return
             }
             
-            // Show selection dialog with delete option
             AlertDialog.Builder(this)
-                .setTitle("Select Workout")
-                .setItems(workoutNames.toTypedArray()) { _, which ->
-                    val selectedName = workoutNames[which]
-                    showWorkoutOptionsDialog(selectedName)
-                }
-                .setNegativeButton("Cancel", null)
+                .setTitle(title)
+                .setItems(workoutNames.toTypedArray()) { _, which -> onPick(workoutNames[which]) }
+                .setNegativeButton(R.string.cancel, null)
                 .show()
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to load workouts: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-    }
-    
-    private fun showWorkoutOptionsDialog(name: String) {
-        AlertDialog.Builder(this)
-            .setTitle(name)
-            .setItems(arrayOf("Load", "Delete")) { _, which ->
-                when (which) {
-                    0 -> loadWorkoutByName(name)
-                    1 -> confirmDeleteWorkout(name)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
     
     private fun confirmDeleteWorkout(name: String) {
