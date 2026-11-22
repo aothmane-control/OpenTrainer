@@ -286,8 +286,18 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:text="Load Workout" />
+                android:text="@string/load_workout" />
         </LinearLayout>
+
+        <!-- Separate from loading, and in the error colour, since it can't be undone -->
+        <Button
+            android:id="@+id/deleteWorkoutButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/delete_workout"
+            android:textColor="?attr/colorError" />
 
         <Button
             android:id="@+id/startWorkoutButton"

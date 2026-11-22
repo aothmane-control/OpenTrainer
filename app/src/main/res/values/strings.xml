@@ -44,6 +44,8 @@
     <string name="resistance_percent">Resistance level</string>
     <string name="add_interval">Add Interval</string>
     <string name="start_workout">Start Workout</string>
+    <string name="load_workout">Load Workout</string>
+    <string name="delete_workout">Delete Workout</string>
     <string name="cancel">Cancel</string>
     <string name="delete_interval">Delete interval</string>
     <string name="setup_workout">Setup Workout</string>
