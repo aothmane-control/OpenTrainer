@@ -22,7 +22,6 @@ import android.view.View
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.VisibleForTesting
@@ -94,7 +93,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
     private lateinit var dataScrollView: NestedScrollView
-    private lateinit var compactLayoutCheckBox: CheckBox
+    // The workout layout chosen in the overflow menu: compact unless the user chose the classic one
+    private var compactLayout = true
     private lateinit var compactWorkoutView: CompactWorkoutView
     @VisibleForTesting
     internal var reconnectDialog: AlertDialog? = null
@@ -103,7 +103,7 @@ class MainActivity : AppCompatActivity() {
     // Scan results are listed until the connection state next changes
     private var showDeviceList = false
     private val isCompactWorkout: Boolean
-        get() = compactLayoutCheckBox.isChecked && activeWorkout != null
+        get() = compactLayout && activeWorkout != null
     private lateinit var powerTextView: TextView
     private lateinit var cadenceTextView: TextView
     private lateinit var speedTextView: TextView
@@ -370,16 +370,9 @@ class MainActivity : AppCompatActivity() {
         
         setupCharts()
         setupWorkoutProfileChart()
-        compactLayoutCheckBox = findViewById(R.id.compactLayoutCheckBox)
-        // Preview picks its layout from the intent and must never touch the saved preference.
-        // Compact unless the user chose the classic layout.
+        // Preview picks its layout from the intent and must never touch the saved preference
         if (!isWorkoutPreview) {
-            compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, true)
-            compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
-                getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
-                // The connected screen also follows the layout choice
-                updateWorkoutLayout()
-            }
+            compactLayout = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, true)
         }
         compactWorkoutView = CompactWorkoutView(
             findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart, mapView,
@@ -410,7 +403,7 @@ class MainActivity : AppCompatActivity() {
             running = workout != null,
             compact = isCompactWorkout,
             route = workout?.gpxTrack != null,
-            compactConnected = compactLayoutCheckBox.isChecked && workout == null &&
+            compactConnected = compactLayout && workout == null &&
                 state is KickrBluetoothService.ConnectionState.Connected
         )
         renderCompactWorkout()
@@ -433,8 +426,6 @@ class MainActivity : AppCompatActivity() {
         val classic = !compact
         listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
             findViewById<View>(R.id.copyrightTextView)).forEach { it.show(classic) }
-        // The layout is chosen before a workout starts, whether or not the trainer is connected
-        compactLayoutCheckBox.show(!running)
         // A running workout keeps going while disconnected, so the user can reconnect
         // or still pause and stop (and save) it
         scanButton.show(classic && !linked)
@@ -461,7 +452,7 @@ class MainActivity : AppCompatActivity() {
         val unset = ConstraintLayout.LayoutParams.UNSET
         val parent = ConstraintLayout.LayoutParams.PARENT_ID
         params.topToTop = if (inline) unset else parent
-        params.topToBottom = if (inline) R.id.compactLayoutCheckBox else unset
+        params.topToBottom = if (inline) R.id.scanButton else unset
         params.bottomToBottom = if (inline) unset else parent
         params.bottomToTop = if (inline) R.id.workoutLauncher else unset
         panel.layoutParams = params
@@ -472,7 +463,7 @@ class MainActivity : AppCompatActivity() {
 
     // Compact mode picks devices from the device picker dialog, so the list stays hidden there
     private fun updateDeviceListVisibility() {
-        devicesRecyclerView.visibility = if (showDeviceList && !compactLayoutCheckBox.isChecked) {
+        devicesRecyclerView.visibility = if (showDeviceList && !compactLayout) {
             View.VISIBLE
         } else View.GONE
     }
@@ -802,7 +793,7 @@ class MainActivity : AppCompatActivity() {
         scanButton.setOnClickListener {
             if (bluetoothService.isScanning.value) {
                 bluetoothService.stopScan()
-            } else if (compactLayoutCheckBox.isChecked) {
+            } else if (compactLayout) {
                 // Same picker the compact workout uses for reconnecting; it starts the scan
                 showCompactReconnectDialog()
             } else {
@@ -1751,6 +1742,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         menu.findItem(R.id.action_view_history)?.isVisible = activeWorkout == null
+        // The layout is chosen before a workout starts, whether or not the trainer is connected
+        menu.findItem(R.id.action_compact_layout)?.apply {
+            isVisible = activeWorkout == null && !isWorkoutPreview
+            isChecked = compactLayout
+        }
         menu.findItem(R.id.action_simulation_check)?.isVisible = isDebuggable && !isWorkoutPreview &&
             activeWorkout == null &&
             bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected
@@ -1761,6 +1757,13 @@ class MainActivity : AppCompatActivity() {
         return when (item.itemId) {
             R.id.action_view_history -> {
                 startActivity(Intent(this, WorkoutHistoryActivity::class.java))
+                true
+            }
+            R.id.action_compact_layout -> {
+                compactLayout = !compactLayout
+                getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, compactLayout).apply()
+                // The connected screen also follows the layout choice; this also updates the menu
+                updateWorkoutLayout()
                 true
             }
             R.id.action_simulation_check -> {

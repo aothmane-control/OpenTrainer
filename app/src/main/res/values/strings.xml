@@ -79,7 +79,6 @@
     <string name="power_format_display">%d W</string>
     <string name="workout_power_format">Target: %1$d W</string>
     <string name="use_compact_workout_layout">Use compact workout layout</string>
-    <string name="compact_layout_hint">Applies to timed resistance and power workouts and to GPX routes.</string>
     <string name="compact_workout_started">Workout started</string>
     <string name="compact_workout_remaining">Workout remaining</string>
     <string name="compact_interval_remaining">Interval: %1$s</string>
