@@ -9,7 +9,7 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
+        android:background="@color/app_bar"
         android:theme="@style/ThemeOverlay.Material3.Dark.ActionBar"
         app:title="Workout History"
         app:navigationIcon="?attr/homeAsUpIndicator"/>

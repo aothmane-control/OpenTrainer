@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The dark tones of the same palette as in values/colors.xml, so primary text, outlined
+         buttons and tabs stay readable on the dark background -->
+    <color name="md_theme_primary">#ADC6FF</color>
+    <color name="md_theme_onPrimary">#002E69</color>
+    <color name="md_theme_primaryContainer">#004494</color>
+    <color name="md_theme_onPrimaryContainer">#D8E2FF</color>
+    <color name="md_theme_secondary">#BEC6DC</color>
+    <color name="md_theme_onSecondary">#283141</color>
+    <color name="md_theme_secondaryContainer">#3E4759</color>
+    <color name="md_theme_onSecondaryContainer">#DAE2F9</color>
+
+    <!-- #CC0000 has only about 3:1 contrast on the dark background -->
+    <color name="status_disconnected">#FF6B6B</color>
+</resources>

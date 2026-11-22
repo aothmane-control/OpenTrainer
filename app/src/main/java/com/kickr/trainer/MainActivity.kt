@@ -10,7 +10,6 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Build
@@ -61,6 +60,7 @@ import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
 import com.kickr.trainer.utils.fitGrades
 import com.kickr.trainer.utils.profileLineDataSet
+import com.kickr.trainer.utils.useThemeColors
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -547,15 +547,10 @@ class MainActivity : AppCompatActivity() {
             setPinchZoom(false)
             legend.isEnabled = false
             axisRight.isEnabled = false
-            axisLeft.apply {
-                textColor = Color.DKGRAY
-                setDrawGridLines(true)
-                gridColor = Color.LTGRAY
-            }
+            useThemeColors()
+            axisLeft.setDrawGridLines(true)
             xAxis.apply {
-                textColor = Color.DKGRAY
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 granularity = 1f
             }
         }
@@ -569,15 +564,10 @@ class MainActivity : AppCompatActivity() {
             setPinchZoom(false)
             legend.isEnabled = false
             axisRight.isEnabled = false
-            axisLeft.apply {
-                textColor = Color.DKGRAY
-                setDrawGridLines(true)
-                gridColor = Color.LTGRAY
-            }
+            useThemeColors()
+            axisLeft.setDrawGridLines(true)
             xAxis.apply {
-                textColor = Color.DKGRAY
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 granularity = 1f
             }
         }
@@ -603,16 +593,14 @@ class MainActivity : AppCompatActivity() {
             setScaleEnabled(false)
             setPinchZoom(false)
             legend.isEnabled = true
-            legend.textColor = Color.DKGRAY
             legend.textSize = 12f
             setExtraOffsets(10f, 10f, 10f, 10f)
             axisRight.isEnabled = false
+            useThemeColors()
             axisLeft.apply {
                 isEnabled = true
-                textColor = Color.BLACK
                 textSize = 12f
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 axisMinimum = 0f
                 axisMaximum = 100f
                 granularity = 10f
@@ -620,10 +608,8 @@ class MainActivity : AppCompatActivity() {
                 setLabelCount(6, false)
             }
             xAxis.apply {
-                textColor = Color.BLACK
                 textSize = 10f
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 granularity = 30f
                 setDrawLabels(true)

@@ -22,6 +22,7 @@ import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.fitGrades
 import com.kickr.trainer.utils.profileLineDataSet
+import com.kickr.trainer.utils.useThemeColors
 
 class WorkoutSummaryActivity : AppCompatActivity() {
 
@@ -76,6 +77,7 @@ class WorkoutSummaryActivity : AppCompatActivity() {
             chart.setScaleEnabled(true)
             chart.setPinchZoom(true)
             chart.axisRight.isEnabled = false
+            chart.useThemeColors()
         }
     }
 

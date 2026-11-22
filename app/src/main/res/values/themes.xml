@@ -10,7 +10,7 @@
         <item name="colorOnSecondary">@color/md_theme_onSecondary</item>
         <item name="colorSecondaryContainer">@color/md_theme_secondaryContainer</item>
         <item name="colorOnSecondaryContainer">@color/md_theme_onSecondaryContainer</item>
-        <item name="android:statusBarColor">@color/md_theme_primary</item>
+        <item name="android:statusBarColor">@color/app_bar</item>
     </style>
 
     <style name="Theme.KickrTrainer" parent="Base.Theme.KickrTrainer" />
