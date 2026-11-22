@@ -158,7 +158,7 @@ class CompactWorkoutTest {
     }
 
     @Test
-    fun compactPowerTargetsAndGpxStillUsesClassicLayout() {
+    fun compactLayoutShowsPowerTargetsAndGpxRoutes() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = true }
             startIntervals(scenario, power = true)
@@ -168,6 +168,7 @@ class CompactWorkoutTest {
                     text(activity, R.id.compactCurrentTarget))
                 assertEquals(activity.getString(R.string.compact_next_power, 220),
                     text(activity, R.id.compactNextTarget))
+                assertEquals(View.GONE, mapTab(activity).view.visibility)
             }
             stopWorkout(scenario, R.id.compactStopButton)
             GpxWorkoutHolder.currentTrack = GpxTrack("Test route", listOf(
@@ -176,12 +177,12 @@ class CompactWorkoutTest {
             returnFromSetup(scenario, GpxMapActivity::class.java, R.id.viewGpxButton,
                 Intent().putExtra("has_gpx_workout", true))
             scenario.onActivity { activity ->
-                assertEquals(View.GONE, activity.findViewById<View>(R.id.compactWorkoutPanel).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.mapCard).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.stopWorkoutButton).visibility)
-                assertEquals(View.GONE, activity.findViewById<View>(R.id.compactLayoutCheckBox).visibility)
+                assertCompact(activity)
+                assertEquals(activity.getString(R.string.compact_route), text(activity, R.id.compactWorkoutType))
+                assertEquals("Test route", text(activity, R.id.compactIntervalText))
+                assertEquals("Only routes have a map", View.VISIBLE, mapTab(activity).view.visibility)
             }
-            stopWorkout(scenario, R.id.stopWorkoutButton)
+            stopWorkout(scenario, R.id.compactStopButton)
         }
     }
 
@@ -303,6 +304,9 @@ class CompactWorkoutTest {
     }
 
     private fun text(activity: MainActivity, id: Int) = activity.findViewById<TextView>(id).text.toString()
+
+    private fun mapTab(activity: MainActivity) = activity.findViewById<TabLayout>(R.id.compactChartTabs).getTabAt(3)!!
+        .also { assertEquals(activity.getString(R.string.compact_map), it.text) }
 
     private companion object {
         const val COMPACT_PREFERENCE = "compact_workout_layout"
