@@ -7,6 +7,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import com.kickr.trainer.bluetooth.ResistanceRange
+import com.kickr.trainer.bluetooth.Trainer
+import com.kickr.trainer.utils.SavedTrainerStorage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -84,9 +87,7 @@ class WorkoutLauncherTest {
     @Test
     fun withASavedTrainerWorkoutsCanBeSetUpButNotStartedWhileDisconnected() {
         preferences.edit().putString("workouts", """{"Zeta":$complete}""").commit()
-        trainerPreferences.edit().putString("trainers",
-            """{"AA:BB:CC:DD:EE:01":{"name":"KICKR CORE 1234","minimum":0,"maximum":100,"increment":1}}""")
-            .commit()
+        SavedTrainerStorage(context).save(Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1)))
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.workoutLauncher).visibility)

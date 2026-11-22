@@ -9,6 +9,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
+import com.kickr.trainer.bluetooth.ResistanceRange
+import com.kickr.trainer.bluetooth.Trainer
+import com.kickr.trainer.utils.SavedTrainerStorage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -26,10 +29,12 @@ class WorkoutSetupTest {
     fun saveUserTrainers() {
         previousTrainers = preferences.getString("trainers", null)
         previousLastConnected = preferences.getString("last_connected", null)
-        preferences.edit().putString("trainers", """{
-            "AA:BB:CC:DD:EE:01":{"name":"KICKR CORE 1234","minimum":0,"maximum":100,"increment":1},
-            "AA:BB:CC:DD:EE:02":{"name":"Another trainer","minimum":10,"maximum":240,"increment":10}
-        }""").putString("last_connected", "AA:BB:CC:DD:EE:02").commit()
+        preferences.edit().remove("trainers").commit()
+        // The trainer saved last is the one that connected last
+        SavedTrainerStorage(context).apply {
+            save(Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1)))
+            save(Trainer("AA:BB:CC:DD:EE:02", "Another trainer", ResistanceRange(10, 240, 10)))
+        }
     }
 
     @After
