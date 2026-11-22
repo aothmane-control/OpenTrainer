@@ -32,8 +32,9 @@ import org.junit.runner.RunWith
 class CompactWorkoutTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    // Same file as MainActivity.getPreferences()
-    private val preferences = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
+    // Same file as MainActivity.getPreferences(): named after the class, in full because the
+    // class is outside the app's package
+    private val preferences = context.getSharedPreferences(MainActivity::class.java.name, Context.MODE_PRIVATE)
     private var savedCompactPreference: Boolean? = null
     private val historyDirectory = File(context.filesDir, "workout_history")
     private var historyBeforeTest = emptySet<String>()
