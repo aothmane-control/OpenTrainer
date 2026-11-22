@@ -86,12 +86,16 @@ class KickrBluetoothService(private val context: Context) {
         get() = bluetoothGatt?.getService(GattAttributes.USER_DATA_SERVICE)
             ?.getCharacteristic(GattAttributes.WEIGHT)
     val hasWeightCharacteristic: Boolean get() = weightCharacteristic != null
+    // The weight last written (raw), so the read-back shows whether the trainer kept it
+    @Volatile private var sentWeightRaw = -1
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     private val commandHandler = Handler(Looper.getMainLooper())
     private var deferredCommand: Runnable? = null
     // The last simulation command logged, so an unchanged one isn't logged every second
     private var lastSimulationCommand: ByteArray? = null
+    // Likewise the last status message, which a trainer may send for every simulation command
+    private var lastMachineStatus: ByteArray? = null
 
     // Android allows only one outstanding GATT operation at a time. Operations are queued
     // and the next one is started from the matching completion callback.
@@ -113,6 +117,7 @@ class KickrBluetoothService(private val context: Context) {
     private var gattOperationInProgress = false
     
     data class ControlPointResponse(val requestOpcode: Int, val resultCode: Int) {
+        val isSuccess get() = resultCode == 0x01
         val resultName get() = when (resultCode) {
             0x01 -> "Success"
             0x02 -> "Op Code Not Supported"
@@ -236,14 +241,17 @@ class KickrBluetoothService(private val context: Context) {
                             )
                         }
                         // Every command is answered, so only the ones the trainer rejects are logged
-                        if (response.resultCode == 0x01) verbose(message) else Log.w(TAG, message())
+                        if (response.isSuccess) verbose(message) else Log.w(TAG, message())
                         _controlPointResponses.tryEmit(response)
                     } else {
                         Log.w(TAG, "Unexpected control point indication: ${value.toHex()}")
                     }
                 }
                 GattAttributes.FITNESS_MACHINE_STATUS -> {
-                    Log.d(TAG, "Fitness Machine Status: ${value.toHex()}")
+                    if (!value.contentEquals(lastMachineStatus)) {
+                        Log.d(TAG, "Fitness Machine Status: ${value.toHex()}")
+                        lastMachineStatus = value
+                    }
                     _machineStatus.tryEmit(value)
                 }
                 else -> {
@@ -274,7 +282,12 @@ class KickrBluetoothService(private val context: Context) {
         ) {
             if (characteristic.uuid == GattAttributes.WEIGHT) {
                 val raw = if (value.size >= 2) (value[0].toInt() and 0xFF) or ((value[1].toInt() and 0xFF) shl 8) else -1
-                Log.d(TAG, "Trainer weight (status=$status): %.3f kg".format(raw * WEIGHT_RESOLUTION_KG))
+                if (status == BluetoothGatt.GATT_SUCCESS && raw != sentWeightRaw) {
+                    Log.w(TAG, "Trainer kept %.3f kg instead of %.3f kg: $WEIGHT_MISMATCH"
+                        .format(raw * WEIGHT_RESOLUTION_KG, sentWeightRaw * WEIGHT_RESOLUTION_KG))
+                } else {
+                    Log.d(TAG, "Trainer weight (status=$status): %.3f kg".format(raw * WEIGHT_RESOLUTION_KG))
+                }
             }
             if (characteristic.uuid == GattAttributes.FITNESS_MACHINE_FEATURE) {
                 features = if (status == BluetoothGatt.GATT_SUCCESS) FitnessMachineFeatures.parse(value) else null
@@ -316,6 +329,9 @@ class KickrBluetoothService(private val context: Context) {
             // Every command is two writes, so only failed ones are logged
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 verbose { "Characteristic write completed: UUID=${characteristic.uuid}" }
+            } else if (characteristic.uuid == GattAttributes.WEIGHT) {
+                // 128 (0x80) is User Data Access Not Permitted: the trainer wants User Data Service consent
+                Log.w(TAG, "Trainer refused the weight (status=$status): $WEIGHT_MISMATCH")
             } else {
                 Log.w(TAG, "Characteristic write failed: UUID=${characteristic.uuid}, status=$status (${
                     when (status) {
@@ -485,6 +501,7 @@ class KickrBluetoothService(private val context: Context) {
         _connectedTrainer.value = null
         features = null
         lastSimulationCommand = null
+        lastMachineStatus = null
         clearGattOperations()
         currentPower = 0
         powerReported = false
@@ -580,6 +597,7 @@ class KickrBluetoothService(private val context: Context) {
         }
         val raw = (weightKg / WEIGHT_RESOLUTION_KG).roundToInt().coerceIn(0, 0xFFFF)
         Log.d(TAG, "Setting trainer weight to %.1f kg (raw $raw)".format(weightKg))
+        sentWeightRaw = raw
         enqueueGattOperation(GattOperation.WriteCharacteristic(
             characteristic, byteArrayOf((raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
         ))
@@ -854,6 +872,8 @@ class KickrBluetoothService(private val context: Context) {
 
     companion object {
         private const val WEIGHT_RESOLUTION_KG = 0.005
+        private const val WEIGHT_MISMATCH =
+            "it simulates climbs with its own mass, the virtual speed with rider plus bike weight"
         private const val TAG = "KickrBluetoothService"
     }
 }

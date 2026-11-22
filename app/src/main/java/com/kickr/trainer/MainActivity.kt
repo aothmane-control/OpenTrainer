@@ -53,14 +53,14 @@ import com.kickr.trainer.model.GradeProfile
 import com.kickr.trainer.model.VirtualSpeed
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
-import kotlin.math.ceil
-import kotlin.math.floor
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.SavedTrainerStorage
 import com.kickr.trainer.utils.RiderBikeSettingsStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
+import com.kickr.trainer.utils.fitGrades
+import com.kickr.trainer.utils.profileLineDataSet
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
@@ -495,7 +495,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderCompactWorkout() {
         if (!compactWorkoutView.isVisible) return
-        val data = withRouteSpeed(bluetoothService.trainerData.value)
+        val data = shownTrainerData
         val workout = activeWorkout ?: return compactWorkoutView.updateMetrics(data, currentDistanceKm)
         val track = workout.gpxTrack
         if (track != null) {
@@ -717,8 +717,8 @@ class MainActivity : AppCompatActivity() {
 
         // Observe trainer data
         lifecycleScope.launch {
-            bluetoothService.trainerData.collect { reported ->
-                val data = withRouteSpeed(reported)
+            bluetoothService.trainerData.collect {
+                val data = shownTrainerData
                 powerTextView.text = getString(R.string.power_format, data.power)
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
@@ -782,16 +782,20 @@ class MainActivity : AppCompatActivity() {
         speedChart.invalidate()
     }
     
-    // During GPX rides the speed along the route replaces the trainer's flywheel speed, so the speed
-    // shown and recorded matches the distance covered
-    private fun withRouteSpeed(data: TrainerData): TrainerData =
-        if (activeWorkout?.gpxTrack != null) data.copy(speed = (virtualSpeed * 3.6).toFloat()) else data
+    // The trainer's data as shown and recorded. During GPX rides the speed along the route replaces the
+    // trainer's flywheel speed, so the speed matches the distance covered. The ride's physics read the
+    // trainer's own values.
+    private val shownTrainerData: TrainerData
+        get() = bluetoothService.trainerData.value.let { data ->
+            if (activeWorkout?.gpxTrack != null) data.copy(speed = (virtualSpeed * 3.6).toFloat()) else data
+        }
 
     // Called once per (unpaused) workout second, so averages are time-weighted
     // and independent of how often the trainer sends notifications.
     // GPX rides pass the grade sent to the trainer in that second.
-    private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData, grade: Double? = null) {
+    private fun recordWorkoutData(grade: Double? = null) {
         if (activeWorkout == null || workoutStartTime == 0L) return
+        val data = shownTrainerData
 
         // GPX rides control the trainer by grade, which is recorded instead of a resistance level
         val currentResistance = activeWorkout?.let { workout ->
@@ -1250,7 +1254,7 @@ class MainActivity : AppCompatActivity() {
                 cumulativeDistance += distancePerSecond * secondsDelta
             }
 
-            recordWorkoutData(bluetoothService.trainerData.value)
+            recordWorkoutData()
             
             val currentIndex = workout.getCurrentIntervalIndex(workoutElapsedSeconds)
             if (currentIndex >= 0) {
@@ -1404,18 +1408,6 @@ class MainActivity : AppCompatActivity() {
         workoutProfileChart.invalidate()
     }
     
-    // Target or grade along the workout, shared by timed workouts and GPX rides
-    private fun profileLineDataSet(entries: List<Entry>, label: String) = LineDataSet(entries, label).apply {
-        color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-        lineWidth = 3f
-        setDrawCircles(false)
-        setDrawValues(false)
-        mode = LineDataSet.Mode.LINEAR
-        setDrawFilled(true)
-        fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
-        fillAlpha = 50
-    }
-
     // Dashed vertical line where the rider is now
     private fun positionLineDataSet(x: Float, yMin: Float, yMax: Float) =
         LineDataSet(listOf(Entry(x, yMin), Entry(x, yMax)), "Current Position").apply {
@@ -1435,11 +1427,8 @@ class MainActivity : AppCompatActivity() {
             "Grade (%)"
         )
         workoutProfileTitleTextView.setText(R.string.grade_profile)
-        // Whole percent with a margin, always including 0 %
-        val grades = samples.map { it.second }
         workoutProfileChart.axisLeft.apply {
-            axisMinimum = floor(minOf(0.0, grades.minOrNull() ?: 0.0)).toFloat() - 1f
-            axisMaximum = ceil(maxOf(0.0, grades.maxOrNull() ?: 0.0)).toFloat() + 1f
+            fitGrades(samples.map { it.second.toFloat() })
             granularity = 1f
             setLabelCount(6, false)
         }
@@ -1650,8 +1639,8 @@ class MainActivity : AppCompatActivity() {
         val gradient = GradeProfile.limit(gpxTrack.getGradientAtDistance(cumulativeDistance), sentGrade, secondsDelta)
         sentGrade = gradient
 
-        // Record the same grade that is sent to the trainer below, and the speed along the route
-        recordWorkoutData(withRouteSpeed(bluetoothService.trainerData.value), gradient)
+        // Record the same grade that is sent to the trainer below
+        recordWorkoutData(gradient)
         
         // Update map position
         routeMap.showPosition(gpxTrack, cumulativeDistance)

@@ -36,8 +36,10 @@ data class RiderBikeSettings(
         WHEEL_CIRCUMFERENCE("wheel_circumference_mm", 2100.0, 1000.0..3000.0),
         // Crr: good road tyres on asphalt; FTMS carries 0.0001 steps in one byte
         ROLLING_RESISTANCE("rolling_resistance", 0.004, 0.001..0.0255),
-        // Cw in kg/m as sent in FTMS, 0.01 steps in one byte: ρ·CdA, so air drag is ½·Cw·v²
-        WIND_RESISTANCE("wind_resistance", 0.51, 0.0..2.55),
+        // Cw in kg/m as sent in FTMS, 0.01 steps in one byte: ρ·CdA, so air drag is ½·Cw·v². At least
+        // 0.1, a CdA of about 0.08 m², well below any rider: without air drag nothing limits the speed on
+        // descents, and the virtual speed would grow until the route ends.
+        WIND_RESISTANCE("wind_resistance", 0.51, 0.1..2.55),
         // Positive is headwind
         WIND_SPEED("wind_speed_mps", 0.0, -20.0..20.0)
     }

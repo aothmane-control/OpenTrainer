@@ -17,7 +17,6 @@ data class FitnessMachineFeatures(val machineFeatures: Long, val targetSettings:
     val supportsResistanceTarget get() = targetSettings.hasBit(2)
     val supportsPowerTarget get() = targetSettings.hasBit(3)
     val supportsSimulation get() = targetSettings.hasBit(13)
-    val supportsWheelCircumference get() = targetSettings.hasBit(14)
 
     override fun toString() =
         "FitnessMachineFeatures(machine=0x%08X, targetSettings=0x%08X)".format(machineFeatures, targetSettings)
