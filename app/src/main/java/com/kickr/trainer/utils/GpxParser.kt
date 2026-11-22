@@ -151,8 +151,8 @@ class GpxParser(
     private fun readTrackPoint(parser: XmlPullParser, tag: String): GpxTrackPoint? {
         parser.require(XmlPullParser.START_TAG, null, tag)
         
-        val lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull()
-        val lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull()
+        val lat = parser.getAttributeValue(null, "lat")?.toFiniteDoubleOrNull()
+        val lon = parser.getAttributeValue(null, "lon")?.toFiniteDoubleOrNull()
         
         var elevation: Double? = null
         var time: String? = null
@@ -166,7 +166,7 @@ class GpxParser(
             }
             
             when (parser.name) {
-                "ele" -> elevation = readText(parser).toDoubleOrNull()
+                "ele" -> elevation = readText(parser).toFiniteDoubleOrNull()
                 "time" -> time = readText(parser)
                 "extensions" -> {
                     val extensions = readExtensions(parser)
@@ -188,6 +188,10 @@ class GpxParser(
         return GpxTrackPoint(lat, lon, elevation, time, heartRate, cadence, power, segment = segment)
     }
     
+    // Kotlin also reads "NaN" and "Infinity" as numbers; in a GPX file they are as unreadable as
+    // any other text, and would turn every distance, grade and speed computed from them into NaN
+    private fun String.toFiniteDoubleOrNull() = toDoubleOrNull()?.takeIf { it.isFinite() }
+
     @Throws(XmlPullParserException::class, IOException::class)
     // Descends into container elements such as Garmin's <gpxtpx:TrackPointExtension>,
     // where hr and cad are nested one level below <extensions>
@@ -211,7 +215,7 @@ class GpxParser(
                 readExtensions(parser, extensions)
             } else {
                 // Unreadable values stay missing; 0 would be a real reading. Some apps write decimals.
-                readText(parser).trim().toDoubleOrNull()?.takeIf { it.isFinite() }?.roundToInt()
+                readText(parser).trim().toFiniteDoubleOrNull()?.roundToInt()
                     ?.let { extensions[key] = it }
             }
         }
