@@ -66,6 +66,10 @@ class KickrBluetoothService(private val context: Context) {
     @Volatile private var resistanceRange = ResistanceRange.DEFAULT
     val minResistanceLevel get() = resistanceRange.minLevel
     val maxResistanceLevel get() = resistanceRange.maxLevel
+    // The connected trainer with its resistance range, once the range is known (null until then),
+    // so the app can remember it and set up workouts in its levels without a connection
+    private val _connectedTrainer = MutableStateFlow<Trainer?>(null)
+    val connectedTrainer: StateFlow<Trainer?> = _connectedTrainer.asStateFlow()
     // What the trainer says it supports, read once per connection (null until read)
     @Volatile var features: FitnessMachineFeatures? = null
         private set
@@ -281,7 +285,9 @@ class KickrBluetoothService(private val context: Context) {
                 if (range != null) {
                     resistanceRange = range
                     Log.d(TAG, "Supported resistance level range: $range")
+                    reportConnectedTrainer(gatt, range)
                 } else {
+                    // Not reported, so levels saved from an earlier connection are kept
                     Log.w(TAG, "Unusable resistance level range (status=$status), keeping levels 0-100")
                 }
             }
@@ -475,6 +481,7 @@ class KickrBluetoothService(private val context: Context) {
     private fun resetConnectionState() {
         ftmsControlPointCharacteristic = null
         resistanceRange = ResistanceRange.DEFAULT
+        _connectedTrainer.value = null
         features = null
         lastSimulationCommand = null
         clearGattOperations()
@@ -671,7 +678,10 @@ class KickrBluetoothService(private val context: Context) {
             service.getCharacteristic(GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE)?.let { characteristic ->
                 enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
                 Log.d(TAG, "Queued read of supported resistance level range")
-            } ?: Log.w(TAG, "Supported resistance level range NOT found - assuming levels 0-100")
+            } ?: run {
+                Log.w(TAG, "Supported resistance level range NOT found - assuming levels 0-100")
+                reportConnectedTrainer(gatt, ResistanceRange.DEFAULT)
+            }
             
             // Enable Indoor Bike Data notifications
             service.getCharacteristic(GattAttributes.INDOOR_BIKE_DATA)?.let { characteristic ->
@@ -729,6 +739,11 @@ class KickrBluetoothService(private val context: Context) {
         } ?: Log.d(TAG, "Heart Rate Service not available (optional)")
     }
     
+    private fun reportConnectedTrainer(gatt: BluetoothGatt, range: ResistanceRange) {
+        val device = gatt.device
+        _connectedTrainer.value = Trainer(device.address, device.name ?: device.address, range)
+    }
+
     private fun parseHeartRateMeasurement(data: ByteArray) {
         if (data.isEmpty()) return
         

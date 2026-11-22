@@ -17,12 +17,15 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.kickr.trainer.adapter.IntervalAdapter
+import com.kickr.trainer.bluetooth.Trainer
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
+import com.kickr.trainer.utils.SavedTrainerStorage
 import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import kotlin.math.roundToInt
@@ -31,6 +34,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
 
     private lateinit var workoutNameEditText: TextInputEditText
     private lateinit var workoutTypeRadioGroup: RadioGroup
+    private lateinit var trainerLayout: TextInputLayout
+    private lateinit var trainerSelector: MaterialAutoCompleteTextView
     private lateinit var totalDurationEditText: TextInputEditText
     private lateinit var setDurationButton: Button
     private lateinit var intervalsCard: MaterialCardView
@@ -51,9 +56,13 @@ class WorkoutSetupActivity : AppCompatActivity() {
     private var workoutType = WorkoutType.RESISTANCE
     
     private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
-    // Highest resistance level of the connected trainer
-    private val maxResistance by lazy { intent.getIntExtra("max_resistance_level", 100) }
-    private val minResistance by lazy { intent.getIntExtra("min_resistance_level", 0) } // Lowest level
+    // Without a connected trainer, workouts can be set up and saved but not started
+    private val trainerConnected by lazy { intent.getBooleanExtra("trainer_connected", true) }
+    // Trainers to take the resistance levels from when none is connected
+    private var savedTrainers = emptyList<Trainer>()
+    // Lowest and highest resistance level of the connected or the selected saved trainer
+    private var minResistance = 0
+    private var maxResistance = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,12 +72,20 @@ class WorkoutSetupActivity : AppCompatActivity() {
         initViews()
         setupRecyclerView()
         setupClickListeners()
+        if (trainerConnected) {
+            minResistance = intent.getIntExtra("min_resistance_level", 0)
+            maxResistance = intent.getIntExtra("max_resistance_level", 100)
+        } else {
+            setupTrainerSelector()
+        }
         updateIntervalInputHint()
     }
 
     private fun initViews() {
         workoutNameEditText = findViewById(R.id.workoutNameEditText)
         workoutTypeRadioGroup = findViewById(R.id.workoutTypeRadioGroup)
+        trainerLayout = findViewById(R.id.trainerLayout)
+        trainerSelector = findViewById(R.id.trainerSelector)
         totalDurationEditText = findViewById(R.id.totalDurationEditText)
         setDurationButton = findViewById(R.id.setDurationButton)
         intervalsCard = findViewById(R.id.intervalsCard)
@@ -146,7 +163,30 @@ class WorkoutSetupActivity : AppCompatActivity() {
         }
     }
     
+    // The trainer that connected last is selected first
+    private fun setupTrainerSelector() {
+        val storage = SavedTrainerStorage(this)
+        savedTrainers = storage.loadAll()
+        val trainer = storage.lastConnected ?: savedTrainers.firstOrNull() ?: return
+        trainerSelector.setSimpleItems(savedTrainers.map { it.name }.toTypedArray())
+        trainerSelector.setOnItemClickListener { _, _, position, _ ->
+            selectTrainer(savedTrainers[position])
+        }
+        selectTrainer(trainer)
+    }
+
+    private fun selectTrainer(trainer: Trainer) {
+        trainerSelector.setText(trainer.name, false)
+        minResistance = trainer.resistanceRange.minLevel
+        maxResistance = trainer.resistanceRange.maxLevel
+        updateIntervalInputHint()
+    }
+
     private fun updateIntervalInputHint() {
+        // Only resistance workouts depend on the trainer
+        trainerLayout.visibility = if (savedTrainers.isNotEmpty() && workoutType == WorkoutType.RESISTANCE) {
+            View.VISIBLE
+        } else View.GONE
         intervalValueLayout.hint = when (workoutType) {
             WorkoutType.RESISTANCE -> getString(R.string.resistance_percent_hint, minResistance, maxResistance)
             WorkoutType.POWER -> getString(R.string.power_watts_hint)
@@ -316,8 +356,9 @@ class WorkoutSetupActivity : AppCompatActivity() {
         val isComplete = currentTotal == totalDurationSeconds && intervals.isNotEmpty()
         val hasRemainingTime = currentTotal < totalDurationSeconds
         
-        startWorkoutButton.visibility = if (isComplete) View.VISIBLE else View.GONE
-        startWorkoutButton.isEnabled = isComplete
+        val canStart = isComplete && trainerConnected
+        startWorkoutButton.visibility = if (canStart) View.VISIBLE else View.GONE
+        startWorkoutButton.isEnabled = canStart
         
         // Disable and hide Add Interval UI when workout duration is fully allocated
         addIntervalButton.isEnabled = hasRemainingTime

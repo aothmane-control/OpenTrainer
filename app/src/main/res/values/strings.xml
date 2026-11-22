@@ -75,6 +75,8 @@
     <string name="target_value">Target Value</string>
     <string name="resistance_percent_hint">Resistance level (%1$d-%2$d)</string>
     <string name="resistance_level_note">Levels are specific to this trainer and not comparable across trainers. Use power mode for comparable workouts.</string>
+    <string name="trainer">Trainer</string>
+    <string name="saved_trainer_levels_note">Not connected: levels saved when this trainer last connected</string>
     <string name="power_watts_hint">Power (watts)</string>
     <string name="power_format_display">%d W</string>
     <string name="workout_power_format">Target: %1$d W</string>

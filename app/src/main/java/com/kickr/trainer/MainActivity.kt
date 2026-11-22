@@ -58,6 +58,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
+import com.kickr.trainer.utils.SavedTrainerStorage
 import com.kickr.trainer.utils.RiderBikeSettingsStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
@@ -88,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startSavedWorkoutButton: Button
     private var selectedWorkoutName: String? = null
     private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
+    private val savedTrainerStorage by lazy { SavedTrainerStorage(this) }
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
     private lateinit var pauseResumeWorkoutButton: Button
@@ -397,20 +399,26 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    // Error means service discovery failed while the link is still up
+    private val isTrainerLinked: Boolean
+        get() = bluetoothService.connectionState.value.let {
+            it is KickrBluetoothService.ConnectionState.Connected ||
+                it is KickrBluetoothService.ConnectionState.Error
+        }
+
     // Shows the views that fit the connection state, the running workout and the layout choice.
     // Called whenever one of them changes.
     private fun updateWorkoutLayout() {
         val state = bluetoothService.connectionState.value
         val workout = activeWorkout
         applyLayout(
-            // Error means service discovery failed while the link is still up
-            linked = state is KickrBluetoothService.ConnectionState.Connected ||
-                state is KickrBluetoothService.ConnectionState.Error,
+            linked = isTrainerLinked,
             running = workout != null,
             compact = isCompactWorkout,
             route = workout?.gpxTrack != null,
             compactConnected = compactLayoutCheckBox.isChecked && workout == null &&
-                state is KickrBluetoothService.ConnectionState.Connected
+                state is KickrBluetoothService.ConnectionState.Connected,
+            trainerSaved = savedTrainerStorage.loadAll().isNotEmpty()
         )
         renderCompactWorkout()
     }
@@ -419,14 +427,17 @@ class MainActivity : AppCompatActivity() {
     // set up by the GPX workout itself, and hidden again here when no workout is running.
     // compactConnected: connected without a workout, the compact panel shows only live metrics
     // in place of the classic metric cards, between the setup controls.
+    // trainerSaved: a trainer has connected before, so workouts can be set up in its levels.
     private fun applyLayout(
         linked: Boolean, running: Boolean, compact: Boolean,
-        compactConnected: Boolean = false, route: Boolean = false
+        compactConnected: Boolean = false, route: Boolean = false, trainerSaved: Boolean = false
     ) {
         fun View.show(visible: Boolean) {
             visibility = if (visible) View.VISIBLE else View.GONE
         }
-        placeCompactPanel(inline = compactConnected)
+        // Without a connection, workouts can still be set up and saved, but not started
+        val launcher = !running && (linked || trainerSaved)
+        placeCompactPanelAndLauncher(inline = compactConnected, offlineLauncher = launcher && !linked)
         compactWorkoutView.setWorkoutMode(compact, route)
         compactWorkoutView.setVisible(compact || compactConnected)
         val classic = !compact
@@ -439,7 +450,8 @@ class MainActivity : AppCompatActivity() {
         scanButton.show(classic && !linked)
         updateDeviceListVisibility()
         disconnectButton.show(linked && !running)
-        workoutLauncher.show(linked && !running)
+        workoutLauncher.show(launcher)
+        startSavedWorkoutButton.show(linked)
         viewGpxButton.show(linked && !running)
         // History is in the overflow menu, hidden during a workout
         invalidateOptionsMenu()
@@ -453,8 +465,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     // The workout fills the screen; when just connected the panel takes the place of the
-    // classic metric cards, so the workout launcher below it follows the panel instead
-    private fun placeCompactPanel(inline: Boolean) {
+    // classic metric cards, so the workout launcher below it follows the panel instead.
+    // offlineLauncher: there are no metric cards either, so the launcher sits at the bottom
+    // and the list of devices found ends above it.
+    private fun placeCompactPanelAndLauncher(inline: Boolean, offlineLauncher: Boolean) {
         val panel = compactWorkoutView.root
         val params = panel.layoutParams as ConstraintLayout.LayoutParams
         val unset = ConstraintLayout.LayoutParams.UNSET
@@ -465,8 +479,19 @@ class MainActivity : AppCompatActivity() {
         params.bottomToTop = if (inline) R.id.workoutLauncher else unset
         panel.layoutParams = params
         val launcherParams = workoutLauncher.layoutParams as ConstraintLayout.LayoutParams
-        launcherParams.topToBottom = if (inline) R.id.compactWorkoutPanel else R.id.dataScrollView
+        launcherParams.topToBottom = when {
+            inline -> R.id.compactWorkoutPanel
+            offlineLauncher -> unset
+            else -> R.id.dataScrollView
+        }
+        launcherParams.bottomToTop = if (offlineLauncher) R.id.copyrightTextView else R.id.viewGpxButton
+        // The same gap below as above it; the buttons above the copyright line get it from their insets
+        launcherParams.bottomMargin = if (offlineLauncher) launcherParams.topMargin else 0
         workoutLauncher.layoutParams = launcherParams
+        val listParams = devicesRecyclerView.layoutParams as ConstraintLayout.LayoutParams
+        listParams.bottomToBottom = if (offlineLauncher) unset else parent
+        listParams.bottomToTop = if (offlineLauncher) R.id.workoutLauncher else unset
+        devicesRecyclerView.layoutParams = listParams
     }
 
     // Compact mode picks devices from the device picker dialog, so the list stays hidden there
@@ -691,6 +716,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Remember each trainer's resistance levels, so workouts can be set up without it
+        lifecycleScope.launch {
+            bluetoothService.connectedTrainer.collect { trainer ->
+                if (trainer != null) savedTrainerStorage.save(trainer)
+            }
+        }
+
         // Observe trainer data
         lifecycleScope.launch {
             bluetoothService.trainerData.collect { reported ->
@@ -831,8 +863,13 @@ class MainActivity : AppCompatActivity() {
         setupWorkoutButton.setOnClickListener {
             Log.d(TAG, "Setup Workout button clicked")
             val intent = Intent(this, WorkoutSetupActivity::class.java)
-                .putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
-                .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
+            if (isTrainerLinked) {
+                intent.putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
+                    .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
+            } else {
+                // The setup takes the levels of a saved trainer
+                intent.putExtra("trainer_connected", false)
+            }
             workoutSetupLauncher.launch(intent)
         }
         
