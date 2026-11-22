@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **View History** moved into the overflow menu.
 - **Dark Mode:** Buttons, tabs, chart labels, the connection status and history badges are readable in dark mode; the toolbar keeps its blue.
 - **Overflow Menu:** Readable dark text on a light menu.
-- **About:** Shows the installed version.
+- **About:** Shows the installed version, and says that the internet is only used for the OpenStreetMap tiles on the GPX screen and during GPX rides; resistance and power workouts work fully offline.
 - **Logging:** One log line per trainer message; status messages are logged when they change, and a trainer that doesn't keep the weight it is sent is reported.
 
 ### Fixed
