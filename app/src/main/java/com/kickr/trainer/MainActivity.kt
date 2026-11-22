@@ -485,8 +485,8 @@ class MainActivity : AppCompatActivity() {
             else -> R.id.dataScrollView
         }
         launcherParams.bottomToTop = if (offlineLauncher) R.id.copyrightTextView else R.id.viewGpxButton
-        // The buttons above the copyright line get this gap from their insets
-        launcherParams.bottomMargin = if (offlineLauncher) (8 * resources.displayMetrics.density).toInt() else 0
+        // The same gap below as above it; the buttons above the copyright line get it from their insets
+        launcherParams.bottomMargin = if (offlineLauncher) launcherParams.topMargin else 0
         workoutLauncher.layoutParams = launcherParams
         val listParams = devicesRecyclerView.layoutParams as ConstraintLayout.LayoutParams
         listParams.bottomToBottom = if (offlineLauncher) unset else parent
