@@ -12,6 +12,7 @@
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorPrimary"
         android:theme="@style/ThemeOverlay.Material3.Dark.ActionBar"
+        app:popupTheme="@style/ThemeOverlay.Material3.Light"
         app:title="@string/app_name"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -41,17 +42,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/connectionStatusTextView" />
 
-    <com.google.android.material.checkbox.MaterialCheckBox
-        android:id="@+id/compactLayoutCheckBox"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:text="@string/use_compact_workout_layout"
-        android:tooltipText="@string/compact_layout_hint"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/scanButton" />
-
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/devicesRecyclerView"
         android:layout_width="0dp"
@@ -63,7 +53,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compactLayoutCheckBox"
+        app:layout_constraintTop_toBottomOf="@id/scanButton"
         tools:listitem="@layout/item_device"
         tools:visibility="visible" />
 
@@ -76,7 +66,7 @@
         app:layout_constraintBottom_toTopOf="@id/workoutLauncher"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compactLayoutCheckBox"
+        app:layout_constraintTop_toBottomOf="@id/scanButton"
         tools:visibility="visible">
 
         <LinearLayout

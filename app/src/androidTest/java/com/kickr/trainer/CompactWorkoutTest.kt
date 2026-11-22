@@ -10,8 +10,8 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.TextView
+import androidx.appcompat.widget.Toolbar
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,8 +32,9 @@ import org.junit.runner.RunWith
 class CompactWorkoutTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    // Same file as MainActivity.getPreferences()
-    private val preferences = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
+    // Same file as MainActivity.getPreferences(): named after the class, in full because the
+    // class is outside the app's package
+    private val preferences = context.getSharedPreferences(MainActivity::class.java.name, Context.MODE_PRIVATE)
     private var savedCompactPreference: Boolean? = null
     private val historyDirectory = File(context.filesDir, "workout_history")
     private var historyBeforeTest = emptySet<String>()
@@ -67,17 +68,27 @@ class CompactWorkoutTest {
     }
 
     @Test
-    fun compactPreferenceMetricSwapTimerAndReturnToClassic() {
+    fun compactLayoutIsTheDefault() {
+        preferences.edit().remove(COMPACT_PREFERENCE).commit()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
-                val checkbox = activity.findViewById<CheckBox>(R.id.compactLayoutCheckBox)
-                assertEquals(View.VISIBLE, checkbox.visibility)
-                checkbox.isChecked = true
+                assertTrue(activity.compactLayoutMenuItem.isVisible)
+                assertTrue(activity.compactLayoutMenuItem.isChecked)
             }
+            startIntervals(scenario)
+            scenario.onActivity { assertCompact(it) }
+            stopWorkout(scenario, R.id.compactStopButton)
+        }
+    }
+
+    @Test
+    fun compactPreferenceMetricSwapTimerAndReturnToClassic() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            chooseLayout(scenario, compact = false)
+            chooseLayout(scenario, compact = true)
             scenario.recreate()
-            scenario.onActivity { activity ->
-                assertTrue(activity.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked)
-            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { assertTrue(it.compactLayoutMenuItem.isChecked) }
             startIntervals(scenario)
             scenario.onActivity { activity ->
                 assertCompact(activity)
@@ -116,7 +127,7 @@ class CompactWorkoutTest {
             SystemClock.sleep(1500)
             scenario.onActivity { activity ->
                 assertEquals(before, text(activity, R.id.compactWorkoutTime))
-                assertEquals(View.GONE, activity.findViewById<View>(R.id.compactLayoutCheckBox).visibility)
+                assertFalse(activity.compactLayoutMenuItem.isVisible)
                 activity.findViewById<Button>(R.id.compactPauseButton).performClick()
                 assertEquals(activity.getString(R.string.compact_pause), text(activity, R.id.compactPauseButton))
             }
@@ -124,7 +135,7 @@ class CompactWorkoutTest {
             scenario.onActivity { activity ->
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.compactWorkoutPanel).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.toolbar).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.compactLayoutCheckBox).visibility)
+                assertTrue(activity.compactLayoutMenuItem.isVisible)
                 for (id in listOf(R.id.workoutProfileChart, R.id.powerChart, R.id.speedChart)) {
                     val chart = activity.findViewById<LineChart>(id)
                     assertEquals(View.VISIBLE, chart.visibility)
@@ -143,7 +154,7 @@ class CompactWorkoutTest {
     @Test
     fun classicLayoutRemainsAvailable() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = false }
+            chooseLayout(scenario, compact = false)
             startIntervals(scenario, power = true)
             scenario.onActivity { activity ->
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.compactWorkoutPanel).visibility)
@@ -158,9 +169,9 @@ class CompactWorkoutTest {
     }
 
     @Test
-    fun compactPowerTargetsAndGpxStillUsesClassicLayout() {
+    fun compactLayoutShowsPowerTargetsAndGpxRoutes() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = true }
+            chooseLayout(scenario, compact = true)
             startIntervals(scenario, power = true)
             scenario.onActivity { activity ->
                 assertCompact(activity)
@@ -168,6 +179,7 @@ class CompactWorkoutTest {
                     text(activity, R.id.compactCurrentTarget))
                 assertEquals(activity.getString(R.string.compact_next_power, 220),
                     text(activity, R.id.compactNextTarget))
+                assertEquals(View.GONE, mapTab(activity).view.visibility)
             }
             stopWorkout(scenario, R.id.compactStopButton)
             GpxWorkoutHolder.currentTrack = GpxTrack("Test route", listOf(
@@ -176,19 +188,19 @@ class CompactWorkoutTest {
             returnFromSetup(scenario, GpxMapActivity::class.java, R.id.viewGpxButton,
                 Intent().putExtra("has_gpx_workout", true))
             scenario.onActivity { activity ->
-                assertEquals(View.GONE, activity.findViewById<View>(R.id.compactWorkoutPanel).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.mapCard).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.stopWorkoutButton).visibility)
-                assertEquals(View.GONE, activity.findViewById<View>(R.id.compactLayoutCheckBox).visibility)
+                assertCompact(activity)
+                assertEquals(activity.getString(R.string.compact_route), text(activity, R.id.compactWorkoutType))
+                assertEquals("Test route", text(activity, R.id.compactIntervalText))
+                assertEquals("Only routes have a map", View.VISIBLE, mapTab(activity).view.visibility)
             }
-            stopWorkout(scenario, R.id.stopWorkoutButton)
+            stopWorkout(scenario, R.id.compactStopButton)
         }
     }
 
     @Test
     fun historyUsesTheStartedWorkoutName() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = false }
+            chooseLayout(scenario, compact = false)
             for ((name, expected) in listOf("Hill repeats" to "Hill repeats", " " to "Custom Workout",
                 null to "Custom Workout")) {
                 startIntervals(scenario, name = name)
@@ -207,7 +219,7 @@ class CompactWorkoutTest {
         assumeTrue("Needs Bluetooth turned on", bluetooth?.isEnabled == true)
         grantBluetoothPermissions()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { it.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = true }
+            chooseLayout(scenario, compact = true)
             startIntervals(scenario)
             scenario.onActivity { activity ->
                 assertCompact(activity)
@@ -292,7 +304,7 @@ class CompactWorkoutTest {
     private fun assertCompact(activity: MainActivity) {
         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.compactWorkoutPanel).visibility)
         for (id in listOf(R.id.toolbar, R.id.connectionStatusTextView, R.id.copyrightTextView,
-            R.id.compactLayoutCheckBox, R.id.dataScrollView, R.id.stopWorkoutButton)) {
+            R.id.dataScrollView, R.id.stopWorkoutButton)) {
             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
         }
         // Whether everything fits without scrolling depends on the screen and font size, and the
@@ -302,7 +314,20 @@ class CompactWorkoutTest {
         assertEquals(0, activity.findViewById<TabLayout>(R.id.compactChartTabs).selectedTabPosition)
     }
 
+    // Picks the layout in the overflow menu, as the user does, if it isn't the one chosen
+    private fun chooseLayout(scenario: ActivityScenario<MainActivity>, compact: Boolean) {
+        if (preferences.getBoolean(COMPACT_PREFERENCE, true) == compact) return
+        scenario.onActivity { activity ->
+            activity.findViewById<Toolbar>(R.id.toolbar).menu.performIdentifierAction(R.id.action_compact_layout, 0)
+        }
+        instrumentation.waitForIdleSync()
+        assertEquals(compact, preferences.getBoolean(COMPACT_PREFERENCE, true))
+    }
+
     private fun text(activity: MainActivity, id: Int) = activity.findViewById<TextView>(id).text.toString()
+
+    private fun mapTab(activity: MainActivity) = activity.findViewById<TabLayout>(R.id.compactChartTabs).getTabAt(3)!!
+        .also { assertEquals(activity.getString(R.string.compact_map), it.text) }
 
     private companion object {
         const val COMPACT_PREFERENCE = "compact_workout_layout"
