@@ -206,27 +206,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
             return
         }
 
-        if (value == null || value <= 0) {
-            val msg = when (workoutType) {
-                WorkoutType.RESISTANCE -> "Resistance level must be between 1 and $maxResistance"
-                WorkoutType.POWER -> "Power must be greater than 0 watts"
-            }
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        // Validate range based on workout type
-        val isValidValue = when (workoutType) {
-            WorkoutType.RESISTANCE -> value in 1..maxResistance
-            WorkoutType.POWER -> value in 1..1000
-        }
-        
-        if (!isValidValue) {
-            val msg = when (workoutType) {
-                WorkoutType.RESISTANCE -> "Resistance level must be between 1 and $maxResistance"
-                WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
-            }
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        if (value == null || !isValidTarget(value)) {
+            Toast.makeText(this, targetRangeMessage(), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -298,18 +279,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 
-                // Validate based on workout type
-                val isValid = when (workoutType) {
-                    WorkoutType.RESISTANCE -> value != null && value in minResistance..maxResistance
-                    WorkoutType.POWER -> value != null && value in 1..1000
-                }
-                
-                if (!isValid) {
-                    val errorMsg = when (workoutType) {
-                        WorkoutType.RESISTANCE -> "Resistance level must be between $minResistance and $maxResistance"
-                        WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
-                    }
-                    Toast.makeText(this, errorMsg, Toast.LENGTH_SHORT).show()
+                if (value == null || !isValidTarget(value)) {
+                    Toast.makeText(this, targetRangeMessage(), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 
@@ -328,8 +299,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 
                 // Update the interval based on workout type
                 val updatedInterval = when (workoutType) {
-                    WorkoutType.RESISTANCE -> WorkoutInterval(newDurationSeconds, value!!, 0)
-                    WorkoutType.POWER -> WorkoutInterval(newDurationSeconds, 0, value!!)
+                    WorkoutType.RESISTANCE -> WorkoutInterval(newDurationSeconds, value, 0)
+                    WorkoutType.POWER -> WorkoutInterval(newDurationSeconds, 0, value)
                 }
                 
                 intervals[position] = updatedInterval
@@ -341,6 +312,28 @@ class WorkoutSetupActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    // The same limits when adding, editing, saving and starting, so intervals entered in another
+    // trainer's levels, or before the workout type changed, can't be kept unnoticed
+    private fun isValidTarget(value: Int) = when (workoutType) {
+        WorkoutType.RESISTANCE -> value in minResistance..maxResistance
+        WorkoutType.POWER -> value in 1..1000
+    }
+
+    private fun targetRangeMessage() = when (workoutType) {
+        WorkoutType.RESISTANCE -> "Resistance level must be between $minResistance and $maxResistance"
+        WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
+    }
+
+    // Names the first interval whose target is out of range, if any
+    private fun showInvalidInterval(): Boolean {
+        val index = intervals.indexOfFirst { interval ->
+            !isValidTarget(if (workoutType == WorkoutType.POWER) interval.power else interval.resistance)
+        }
+        if (index < 0) return false
+        Toast.makeText(this, "Interval ${index + 1}: ${targetRangeMessage()}", Toast.LENGTH_LONG).show()
+        return true
     }
 
     private fun updateRemainingTime() {
@@ -369,6 +362,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     }
 
     private fun startWorkout() {
+        if (showInvalidInterval()) return
         val workout = Workout(totalDurationSeconds, intervals.toList(), workoutType)
         if (!workout.isValid()) {
             Toast.makeText(this, "Invalid workout configuration", Toast.LENGTH_SHORT).show()
@@ -403,6 +397,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
             Toast.makeText(this, "Please enter a workout name", Toast.LENGTH_SHORT).show()
             return
         }
+        if (showInvalidInterval()) return
         
         try {
             savedWorkoutStorage.save(workoutName, Workout(totalDurationSeconds, intervals.toList(), workoutType))
