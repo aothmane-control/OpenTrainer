@@ -8,6 +8,7 @@ package com.kickr.trainer
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
+import android.view.MotionEvent
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
 import androidx.preference.PreferenceManager
@@ -45,10 +46,17 @@ internal class RouteMap(private val mapView: MapView) {
         }
     }
 
-    // Only notes the time: the map still handles the touch, and taps still reach its markers
+    // Notes the time; the map still handles the touch, and taps still reach its markers. A finger
+    // going down also keeps the gesture in the map, since during a ride it sits in a scroll view
+    // that would take over any drag or pinch with a vertical part, and stops the re-centring
+    // animation, which would otherwise pull the map back under the finger.
     @SuppressLint("ClickableViewAccessibility")
-    private fun noteTouches() = mapView.setOnTouchListener { _, _ ->
+    private fun noteTouches() = mapView.setOnTouchListener { view, event ->
         lastTouchMs = SystemClock.uptimeMillis()
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            view.parent?.requestDisallowInterceptTouchEvent(true)
+            mapView.controller.stopAnimation(false)
+        }
         false
     }
 
