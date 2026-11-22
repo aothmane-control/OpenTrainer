@@ -28,7 +28,7 @@
             android:layout_marginTop="4dp"
             android:text="00:00:00:00:00:00"
             android:textSize="12sp"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="?android:attr/textColorSecondary" />
 
         <TextView
             android:id="@+id/deviceRssiTextView"
