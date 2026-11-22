@@ -138,7 +138,9 @@ class MainActivity : AppCompatActivity() {
     private var workoutResumedAt = 0L    // elapsedRealtime() when the current unpaused segment started
     private var lastSentTarget = -1 // Last resistance (%) or power (W) sent to the trainer; -1 forces a resend
     private var workoutElapsedSeconds = 0
-    private var cumulativeDistance = 0.0 // For GPX workouts
+    private var cumulativeDistance = 0.0 // m in the running workout, or ridden since the last one
+    // The trainer data last received without a workout, so the distance follows its speed
+    private var freeRideSample: TrainerData? = null
     private var sentGrade: Double? = null // Last grade sent in a GPX workout
     private var virtualSpeed = 0.0 // m/s on the route in a GPX workout, from power and grade
     private val currentDistanceKm: Double get() = cumulativeDistance / 1000.0
@@ -717,16 +719,20 @@ class MainActivity : AppCompatActivity() {
 
         // Observe trainer data
         lifecycleScope.launch {
-            bluetoothService.trainerData.collect {
+            bluetoothService.trainerData.collect { reported ->
+                // Workouts count the distance once per workout second; without one it follows the
+                // trainer's speed from message to message
+                if (activeWorkout == null) {
+                    freeRideSample?.let { cumulativeDistance += it.distanceUntil(reported) }
+                    freeRideSample = reported
+                } else {
+                    freeRideSample = null
+                }
                 val data = shownTrainerData
                 powerTextView.text = getString(R.string.power_format, data.power)
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
-                
-                // Update distance display if workout is active
-                if (activeWorkout != null) {
-                    distanceTextView.text = getString(R.string.distance_format, currentDistanceKm)
-                }
+                distanceTextView.text = getString(R.string.distance_format, currentDistanceKm)
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
@@ -1248,10 +1254,7 @@ class MainActivity : AppCompatActivity() {
 
             // Calculate distance for resistance workouts (not GPX)
             if (workout.gpxTrack == null) {
-                val currentSpeed = bluetoothService.trainerData.value.speed
-                val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
-                val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
-                cumulativeDistance += distancePerSecond * secondsDelta
+                cumulativeDistance += bluetoothService.trainerData.value.plausibleSpeedMps * secondsDelta
             }
 
             recordWorkoutData()
