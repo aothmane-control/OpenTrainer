@@ -11,4 +11,8 @@
     
     <color name="md_theme_light_primaryContainer">#D8E2FF</color>
     <color name="md_theme_light_onPrimaryContainer">#001A41</color>
+
+    <!-- The toolbars and status bar stay this blue with white text in dark mode too, where the
+         primary colour is light -->
+    <color name="app_bar">#005CBC</color>
 </resources>
