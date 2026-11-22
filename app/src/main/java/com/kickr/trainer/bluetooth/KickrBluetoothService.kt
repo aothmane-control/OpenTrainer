@@ -94,6 +94,8 @@ class KickrBluetoothService(private val context: Context) {
     private var deferredCommand: Runnable? = null
     // The last simulation command logged, so an unchanged one isn't logged every second
     private var lastSimulationCommand: ByteArray? = null
+    // Likewise the last status message, which a trainer may send for every simulation command
+    private var lastMachineStatus: ByteArray? = null
 
     // Android allows only one outstanding GATT operation at a time. Operations are queued
     // and the next one is started from the matching completion callback.
@@ -245,7 +247,10 @@ class KickrBluetoothService(private val context: Context) {
                     }
                 }
                 GattAttributes.FITNESS_MACHINE_STATUS -> {
-                    Log.d(TAG, "Fitness Machine Status: ${value.toHex()}")
+                    if (!value.contentEquals(lastMachineStatus)) {
+                        Log.d(TAG, "Fitness Machine Status: ${value.toHex()}")
+                        lastMachineStatus = value
+                    }
                     _machineStatus.tryEmit(value)
                 }
                 else -> {
@@ -495,6 +500,7 @@ class KickrBluetoothService(private val context: Context) {
         _connectedTrainer.value = null
         features = null
         lastSimulationCommand = null
+        lastMachineStatus = null
         clearGattOperations()
         currentPower = 0
         powerReported = false
