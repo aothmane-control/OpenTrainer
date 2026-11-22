@@ -3,9 +3,9 @@
     <string name="app_name">OpenTrainer</string>
     <string name="scan_for_devices">Scan for Devices</string>
     <string name="scan_hint">Connect to your smart trainer over Bluetooth to ride and to start workouts.</string>
-    <string name="edit_workouts">Create or Edit Workouts</string>
-    <string name="workouts_hint">Create new workouts or open saved ones to edit them, even while no trainer is connected.</string>
-    <string name="workouts_hint_no_trainer">Connect to your trainer once to create and edit workouts here in its resistance levels.</string>
+    <string name="edit_workouts">Create, Edit or Delete Workouts</string>
+    <string name="workouts_hint">Create new workouts, or open saved ones to edit or delete them, even while no trainer is connected.</string>
+    <string name="workouts_hint_no_trainer">Connect to your trainer once to create, edit and delete workouts here in its resistance levels.</string>
     <string name="stop_scan">Stop Scan</string>
     <string name="disconnect">Disconnect</string>
     <string name="disconnected">Disconnected</string>
@@ -45,7 +45,7 @@
     <string name="add_interval">Add Interval</string>
     <string name="start_workout">Start Workout</string>
     <string name="load_workout">Load Workout</string>
-    <string name="delete_workout">Delete Workout</string>
+    <string name="delete_workout">Delete Existing Workout</string>
     <string name="cancel">Cancel</string>
     <string name="delete_interval">Delete interval</string>
     <string name="setup_workout">Setup Workout</string>
