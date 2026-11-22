@@ -2,6 +2,7 @@ package com.kickr.trainer
 
 import android.view.View
 import android.widget.Button
+import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -57,7 +58,7 @@ class WorkoutLauncherTest {
                     assertEquals(if (remembered == "Zeta") "Zeta" else "Alpha", selector.text.toString())
                     assertEquals(listOf("Alpha", "Zeta"), (0 until selector.adapter.count).map { selector.adapter.getItem(it) })
                     assertTrue(activity.findViewById<Button>(R.id.startSavedWorkoutButton).isEnabled)
-                    assertEquals("Disconnected launcher stays hidden without a saved trainer", View.GONE,
+                    assertEquals("The launcher with the start button needs a connection", View.GONE,
                         activity.findViewById<View>(R.id.workoutLauncher).visibility)
                 }
             }
@@ -85,18 +86,43 @@ class WorkoutLauncherTest {
     }
 
     @Test
-    fun withASavedTrainerWorkoutsCanBeSetUpButNotStartedWhileDisconnected() {
-        preferences.edit().putString("workouts", """{"Zeta":$complete}""").commit()
-        SavedTrainerStorage(context).save(Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1)))
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { activity ->
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.workoutLauncher).visibility)
-                assertEquals("Zeta", activity.findViewById<MaterialAutoCompleteTextView>(R.id.savedWorkoutSelector).text.toString())
-                assertEquals(View.VISIBLE, activity.findViewById<Button>(R.id.setupWorkoutButton).visibility)
-                assertEquals("Nothing can be started without a trainer", View.GONE,
-                    activity.findViewById<Button>(R.id.startSavedWorkoutButton).visibility)
-                assertEquals(View.GONE, activity.findViewById<Button>(R.id.viewGpxButton).visibility)
+    fun theStartScreenExplainsBothButtonsAndOpensWorkoutsOnceATrainerIsSaved() {
+        for (saved in listOf(false, true)) {
+            if (saved) {
+                SavedTrainerStorage(context).save(Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1)))
             }
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    for (id in listOf(R.id.scanHintTextView, R.id.scanButton, R.id.workoutsHintTextView, R.id.workoutsButton)) {
+                        assertEquals(View.VISIBLE, activity.findViewById<View>(id).visibility)
+                    }
+                    assertEquals("Workouts are set up in a saved trainer's levels", saved,
+                        activity.findViewById<Button>(R.id.workoutsButton).isEnabled)
+                    assertEquals(activity.getString(if (saved) R.string.workouts_hint else R.string.workouts_hint_no_trainer),
+                        activity.findViewById<TextView>(R.id.workoutsHintTextView).text.toString())
+                    assertEquals("Nothing can be started without a trainer", View.GONE,
+                        activity.findViewById<View>(R.id.workoutLauncher).visibility)
+                    assertEquals(View.GONE, activity.findViewById<Button>(R.id.viewGpxButton).visibility)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun theWorkoutsButtonOpensTheSetupWithoutAConnection() {
+        SavedTrainerStorage(context).save(Trainer("AA:BB:CC:DD:EE:01", "KICKR CORE 1234", ResistanceRange(0, 100, 1)))
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(WorkoutSetupActivity::class.java.name, null, false)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { it.findViewById<Button>(R.id.workoutsButton).performClick() }
+                val setup = instrumentation.waitForMonitorWithTimeout(monitor, 10000)
+                assertNotNull("Setup did not open", setup)
+                assertFalse(setup.intent.getBooleanExtra("trainer_connected", true))
+                instrumentation.runOnMainSync { setup.finish() }
+            }
+        } finally {
+            instrumentation.removeMonitor(monitor)
         }
     }
 

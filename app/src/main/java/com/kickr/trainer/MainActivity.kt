@@ -82,6 +82,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scanButton: Button
     private lateinit var disconnectButton: Button
     private lateinit var setupWorkoutButton: Button
+    // The start screen: scan, and set up workouts without a connection, each with a sentence above it
+    private lateinit var scanHintTextView: TextView
+    private lateinit var workoutsHintTextView: TextView
+    private lateinit var workoutsButton: Button
     private lateinit var workoutLauncher: View
     private lateinit var savedWorkoutLayout: TextInputLayout
     private lateinit var savedWorkoutSelector: MaterialAutoCompleteTextView
@@ -336,6 +340,9 @@ class MainActivity : AppCompatActivity() {
         scanButton = findViewById(R.id.scanButton)
         disconnectButton = findViewById(R.id.disconnectButton)
         setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
+        scanHintTextView = findViewById(R.id.scanHintTextView)
+        workoutsHintTextView = findViewById(R.id.workoutsHintTextView)
+        workoutsButton = findViewById(R.id.workoutsButton)
         workoutLauncher = findViewById(R.id.workoutLauncher)
         savedWorkoutLayout = findViewById(R.id.savedWorkoutLayout)
         savedWorkoutSelector = findViewById(R.id.savedWorkoutSelector)
@@ -431,9 +438,7 @@ class MainActivity : AppCompatActivity() {
         fun View.show(visible: Boolean) {
             visibility = if (visible) View.VISIBLE else View.GONE
         }
-        // Without a connection, workouts can still be set up and saved, but not started
-        val launcher = !running && (linked || trainerSaved)
-        placeCompactPanelAndLauncher(inline = compactConnected, offlineLauncher = launcher && !linked)
+        placeCompactPanel(inline = compactConnected)
         compactWorkoutView.setWorkoutMode(compact, route)
         compactWorkoutView.setVisible(compact || compactConnected)
         val classic = !compact
@@ -442,10 +447,14 @@ class MainActivity : AppCompatActivity() {
         // A running workout keeps going while disconnected, so the user can reconnect
         // or still pause and stop (and save) it
         scanButton.show(classic && !linked)
+        // Without a connection, workouts can still be set up and saved, but not started
+        val start = !linked && !running
+        listOf(scanHintTextView, workoutsHintTextView, workoutsButton).forEach { it.show(start) }
+        workoutsButton.isEnabled = trainerSaved
+        workoutsHintTextView.setText(if (trainerSaved) R.string.workouts_hint else R.string.workouts_hint_no_trainer)
         updateDeviceListVisibility()
         disconnectButton.show(linked && !running)
-        workoutLauncher.show(launcher)
-        startSavedWorkoutButton.show(linked)
+        workoutLauncher.show(linked && !running)
         viewGpxButton.show(linked && !running)
         // History is in the overflow menu, hidden during a workout
         invalidateOptionsMenu()
@@ -459,10 +468,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // The workout fills the screen; when just connected the panel takes the place of the
-    // classic metric cards, so the workout launcher below it follows the panel instead.
-    // offlineLauncher: there are no metric cards either, so the launcher sits at the bottom
-    // and the list of devices found ends above it.
-    private fun placeCompactPanelAndLauncher(inline: Boolean, offlineLauncher: Boolean) {
+    // classic metric cards, so the workout launcher below it follows the panel instead
+    private fun placeCompactPanel(inline: Boolean) {
         val panel = compactWorkoutView.root
         val params = panel.layoutParams as ConstraintLayout.LayoutParams
         val unset = ConstraintLayout.LayoutParams.UNSET
@@ -473,19 +480,8 @@ class MainActivity : AppCompatActivity() {
         params.bottomToTop = if (inline) R.id.workoutLauncher else unset
         panel.layoutParams = params
         val launcherParams = workoutLauncher.layoutParams as ConstraintLayout.LayoutParams
-        launcherParams.topToBottom = when {
-            inline -> R.id.compactWorkoutPanel
-            offlineLauncher -> unset
-            else -> R.id.dataScrollView
-        }
-        launcherParams.bottomToTop = if (offlineLauncher) R.id.copyrightTextView else R.id.viewGpxButton
-        // The same gap below as above it; the buttons above the copyright line get it from their insets
-        launcherParams.bottomMargin = if (offlineLauncher) launcherParams.topMargin else 0
+        launcherParams.topToBottom = if (inline) R.id.compactWorkoutPanel else R.id.dataScrollView
         workoutLauncher.layoutParams = launcherParams
-        val listParams = devicesRecyclerView.layoutParams as ConstraintLayout.LayoutParams
-        listParams.bottomToBottom = if (offlineLauncher) unset else parent
-        listParams.bottomToTop = if (offlineLauncher) R.id.workoutLauncher else unset
-        devicesRecyclerView.layoutParams = listParams
     }
 
     // Compact mode picks devices from the device picker dialog, so the list stays hidden there
@@ -862,18 +858,8 @@ class MainActivity : AppCompatActivity() {
             activeWorkout = workout
             startWorkout(name)
         }
-        setupWorkoutButton.setOnClickListener {
-            Log.d(TAG, "Setup Workout button clicked")
-            val intent = Intent(this, WorkoutSetupActivity::class.java)
-            if (isTrainerLinked) {
-                intent.putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
-                    .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
-            } else {
-                // The setup takes the levels of a saved trainer
-                intent.putExtra("trainer_connected", false)
-            }
-            workoutSetupLauncher.launch(intent)
-        }
+        setupWorkoutButton.setOnClickListener { openWorkoutSetup() }
+        workoutsButton.setOnClickListener { openWorkoutSetup() }
         
         viewGpxButton.setOnClickListener {
             val intent = Intent(this, GpxMapActivity::class.java)
@@ -889,6 +875,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    // From the + next to the saved workouts when connected, or from the start screen without a connection
+    private fun openWorkoutSetup() {
+        Log.d(TAG, "Setup Workout button clicked")
+        val intent = Intent(this, WorkoutSetupActivity::class.java)
+        if (isTrainerLinked) {
+            intent.putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
+                .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
+        } else {
+            // The setup takes the levels of a saved trainer
+            intent.putExtra("trainer_connected", false)
+        }
+        workoutSetupLauncher.launch(intent)
+    }
+
     private fun generateBeepSound(file: File, frequency: Double, durationMs: Int) {
         try {
             val sampleRate = 44100
