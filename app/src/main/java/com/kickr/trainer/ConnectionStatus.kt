@@ -14,7 +14,7 @@ import com.kickr.trainer.bluetooth.KickrBluetoothService.ConnectionState
 internal fun ConnectionState.statusColorRes(): Int = when (this) {
     ConnectionState.Connected -> android.R.color.holo_green_dark
     ConnectionState.Connecting -> android.R.color.holo_blue_dark
-    else -> android.R.color.holo_red_dark
+    else -> R.color.status_disconnected
 }
 
 internal fun ConnectionState.statusLabel(context: Context): String = when (this) {

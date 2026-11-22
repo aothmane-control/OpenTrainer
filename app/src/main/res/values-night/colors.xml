@@ -10,4 +10,7 @@
     <color name="md_theme_onSecondary">#283141</color>
     <color name="md_theme_secondaryContainer">#3E4759</color>
     <color name="md_theme_onSecondaryContainer">#DAE2F9</color>
+
+    <!-- #CC0000 has only about 3:1 contrast on the dark background -->
+    <color name="status_disconnected">#FF6B6B</color>
 </resources>

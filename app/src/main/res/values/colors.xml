@@ -15,4 +15,7 @@
     <!-- The toolbars and status bar stay this blue with white text in dark mode too, where the
          primary colour is light -->
     <color name="app_bar">#005CBC</color>
+
+    <!-- Disconnected or failed connection, lighter in dark mode -->
+    <color name="status_disconnected">#CC0000</color>
 </resources>
