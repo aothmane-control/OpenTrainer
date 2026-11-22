@@ -10,7 +10,6 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Build
@@ -22,7 +21,6 @@ import android.view.View
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.VisibleForTesting
@@ -39,6 +37,7 @@ import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
+import com.github.mikephil.charting.formatter.ValueFormatter
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
@@ -49,21 +48,23 @@ import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
 import com.kickr.trainer.model.GpxTrack
+import com.kickr.trainer.model.GradeProfile
+import com.kickr.trainer.model.VirtualSpeed
 import com.kickr.trainer.model.WorkoutDataPoint
 import com.kickr.trainer.model.WorkoutHistory
 import com.kickr.trainer.utils.WorkoutStorageManager
 import com.kickr.trainer.utils.SavedWorkoutStorage
+import com.kickr.trainer.utils.SavedTrainerStorage
+import com.kickr.trainer.utils.RiderBikeSettingsStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import com.kickr.trainer.utils.formatWorkoutTime
+import com.kickr.trainer.utils.fitGrades
+import com.kickr.trainer.utils.profileLineDataSet
+import com.kickr.trainer.utils.useThemeColors
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.io.File
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.Marker
 
 class MainActivity : AppCompatActivity() {
 
@@ -74,25 +75,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var isWorkoutPreview = false
+    private val isDebuggable get() = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     private lateinit var bluetoothService: KickrBluetoothService
     private lateinit var deviceAdapter: DeviceAdapter
     
     private lateinit var scanButton: Button
     private lateinit var disconnectButton: Button
     private lateinit var setupWorkoutButton: Button
+    // The start screen: scan, and set up workouts without a connection, each with a sentence above it
+    private lateinit var scanHintTextView: TextView
+    private lateinit var workoutsHintTextView: TextView
+    private lateinit var workoutsButton: Button
     private lateinit var workoutLauncher: View
     private lateinit var savedWorkoutLayout: TextInputLayout
     private lateinit var savedWorkoutSelector: MaterialAutoCompleteTextView
     private lateinit var startSavedWorkoutButton: Button
     private var selectedWorkoutName: String? = null
     private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
+    private val savedTrainerStorage by lazy { SavedTrainerStorage(this) }
     private lateinit var viewGpxButton: Button
     private lateinit var stopWorkoutButton: Button
     private lateinit var pauseResumeWorkoutButton: Button
     private lateinit var connectionStatusTextView: TextView
     private lateinit var devicesRecyclerView: RecyclerView
     private lateinit var dataScrollView: NestedScrollView
-    private lateinit var compactLayoutCheckBox: CheckBox
+    // The workout layout chosen in the overflow menu: compact unless the user chose the classic one
+    private var compactLayout = true
     private lateinit var compactWorkoutView: CompactWorkoutView
     @VisibleForTesting
     internal var reconnectDialog: AlertDialog? = null
@@ -101,7 +109,7 @@ class MainActivity : AppCompatActivity() {
     // Scan results are listed until the connection state next changes
     private var showDeviceList = false
     private val isCompactWorkout: Boolean
-        get() = compactLayoutCheckBox.isChecked && activeWorkout?.let { it.gpxTrack == null } == true
+        get() = compactLayout && activeWorkout != null
     private lateinit var powerTextView: TextView
     private lateinit var cadenceTextView: TextView
     private lateinit var speedTextView: TextView
@@ -113,13 +121,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workoutIntervalTextView: TextView
     private lateinit var workoutResistanceTextView: TextView
     private lateinit var workoutTimeTextView: TextView
-    private lateinit var viewMapButton: Button
     private lateinit var workoutProfileChart: LineChart
     private lateinit var workoutProfileTitleTextView: TextView
+    // GPX rides: the route's grade profile, built once per ride
+    private var gradeProfileDataSet: LineDataSet? = null
     private lateinit var mapView: MapView
     private lateinit var mapCard: MaterialCardView
-    private var currentPositionMarker: Marker? = null
-    private var routePolyline: Polyline? = null
+    private lateinit var routeMap: RouteMap
     
     private val powerDataPoints = mutableListOf<Entry>()
     private val speedDataPoints = mutableListOf<Entry>()
@@ -134,7 +142,11 @@ class MainActivity : AppCompatActivity() {
     private var workoutResumedAt = 0L    // elapsedRealtime() when the current unpaused segment started
     private var lastSentTarget = -1 // Last resistance (%) or power (W) sent to the trainer; -1 forces a resend
     private var workoutElapsedSeconds = 0
-    private var cumulativeDistance = 0.0 // For GPX workouts
+    private var cumulativeDistance = 0.0 // m in the running workout, or ridden since the last one
+    // The trainer data last received without a workout, so the distance follows its speed
+    private var freeRideSample: TrainerData? = null
+    private var sentGrade: Double? = null // Last grade sent in a GPX workout
+    private var virtualSpeed = 0.0 // m/s on the route in a GPX workout, from power and grade
     private val currentDistanceKm: Double get() = cumulativeDistance / 1000.0
     private var workoutPaused = false
     private var workoutPausedAtSecond = 0
@@ -146,6 +158,7 @@ class MainActivity : AppCompatActivity() {
     private var workoutStartTime: Long = 0
     private val workoutDataPoints = mutableListOf<WorkoutDataPoint>()
     private lateinit var workoutStorageManager: WorkoutStorageManager
+    private lateinit var riderBikeSettingsStorage: RiderBikeSettingsStorage
 
     private val requestBluetoothPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -224,13 +237,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize osmdroid configuration BEFORE setContentView
-        Configuration.getInstance().apply {
-            load(this@MainActivity, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this@MainActivity))
-            userAgentValue = "OpenTrainer/1.0"
-            osmdroidBasePath = getExternalFilesDir(null)
-            osmdroidTileCache = File(getExternalFilesDir(null), "osmdroid/tiles")
-        }
+        // Before setContentView(), which creates the map
+        RouteMap.configure(this)
         
         setContentView(R.layout.activity_main)
         applyEdgeToEdgeInsets()
@@ -239,8 +247,7 @@ class MainActivity : AppCompatActivity() {
         val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
 
-        isWorkoutPreview = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
-            intent.getBooleanExtra("preview", false)
+        isWorkoutPreview = isDebuggable && intent.getBooleanExtra("preview", false)
         if (isWorkoutPreview) {
             initViews()
             showWorkoutPreview()
@@ -249,6 +256,7 @@ class MainActivity : AppCompatActivity() {
 
         bluetoothService = KickrBluetoothService(this)
         workoutStorageManager = WorkoutStorageManager(this)
+        riderBikeSettingsStorage = RiderBikeSettingsStorage(this)
         
         // Initialize sound effects for workout notifications
         try {
@@ -296,7 +304,7 @@ class MainActivity : AppCompatActivity() {
         )
         // Preview layout is explicit and never reads or changes the saved compact preference.
         val compact = intent.getBooleanExtra("compact", false)
-        applyLayout(linked = true, running = true, gpx = false, compact = compact)
+        applyLayout(linked = true, running = true, compact = compact)
         stopWorkoutButton.isEnabled = false
         pauseResumeWorkoutButton.isEnabled = false
         pauseResumeWorkoutButton.setText(R.string.pause_workout)
@@ -332,6 +340,9 @@ class MainActivity : AppCompatActivity() {
         scanButton = findViewById(R.id.scanButton)
         disconnectButton = findViewById(R.id.disconnectButton)
         setupWorkoutButton = findViewById(R.id.setupWorkoutButton)
+        scanHintTextView = findViewById(R.id.scanHintTextView)
+        workoutsHintTextView = findViewById(R.id.workoutsHintTextView)
+        workoutsButton = findViewById(R.id.workoutsButton)
         workoutLauncher = findViewById(R.id.workoutLauncher)
         savedWorkoutLayout = findViewById(R.id.savedWorkoutLayout)
         savedWorkoutSelector = findViewById(R.id.savedWorkoutSelector)
@@ -353,13 +364,14 @@ class MainActivity : AppCompatActivity() {
         workoutIntervalTextView = findViewById(R.id.workoutIntervalTextView)
         workoutResistanceTextView = findViewById(R.id.workoutResistanceTextView)
         workoutTimeTextView = findViewById(R.id.workoutTimeTextView)
-        viewMapButton = findViewById(R.id.viewMapButton)
         workoutProfileChart = findViewById(R.id.workoutProfileChart)
         workoutProfileTitleTextView = findViewById(R.id.workoutProfileTitleTextView)
         mapView = findViewById(R.id.mapView)
         mapCard = findViewById(R.id.mapCard)
         
-        if (!isWorkoutPreview) setupMap()
+        routeMap = RouteMap(mapView)
+        // The compact layout moves the map into its panel and back; onDestroy() detaches it
+        mapView.setDestroyMode(false)
         
         if (workoutStatusCard == null || workoutChartCard == null) {
             Log.e(TAG, "ERROR: Workout cards not found in layout!")
@@ -369,18 +381,12 @@ class MainActivity : AppCompatActivity() {
         
         setupCharts()
         setupWorkoutProfileChart()
-        compactLayoutCheckBox = findViewById(R.id.compactLayoutCheckBox)
         // Preview picks its layout from the intent and must never touch the saved preference
         if (!isWorkoutPreview) {
-            compactLayoutCheckBox.isChecked = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, false)
-            compactLayoutCheckBox.setOnCheckedChangeListener { _, checked ->
-                getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, checked).apply()
-                // The connected screen also follows the layout choice
-                updateWorkoutLayout()
-            }
+            compactLayout = getPreferences(MODE_PRIVATE).getBoolean(COMPACT_LAYOUT_PREFERENCE, true)
         }
         compactWorkoutView = CompactWorkoutView(
-            findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart,
+            findViewById(R.id.compactWorkoutPanel), workoutProfileChart, powerChart, speedChart, mapView,
             onPause = { togglePauseResumeWorkout() },
             onStop = { stopWorkout() },
             onConnection = {
@@ -396,20 +402,26 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    // Error means service discovery failed while the link is still up
+    private val isTrainerLinked: Boolean
+        get() = bluetoothService.connectionState.value.let {
+            it is KickrBluetoothService.ConnectionState.Connected ||
+                it is KickrBluetoothService.ConnectionState.Error
+        }
+
     // Shows the views that fit the connection state, the running workout and the layout choice.
     // Called whenever one of them changes.
     private fun updateWorkoutLayout() {
         val state = bluetoothService.connectionState.value
         val workout = activeWorkout
         applyLayout(
-            // Error means service discovery failed while the link is still up
-            linked = state is KickrBluetoothService.ConnectionState.Connected ||
-                state is KickrBluetoothService.ConnectionState.Error,
+            linked = isTrainerLinked,
             running = workout != null,
-            gpx = workout?.gpxTrack != null,
             compact = isCompactWorkout,
-            compactConnected = compactLayoutCheckBox.isChecked && workout == null &&
-                state is KickrBluetoothService.ConnectionState.Connected
+            route = workout?.gpxTrack != null,
+            compactConnected = compactLayout && workout == null &&
+                state is KickrBluetoothService.ConnectionState.Connected,
+            trainerSaved = savedTrainerStorage.loadAll().isNotEmpty()
         )
         renderCompactWorkout()
     }
@@ -418,24 +430,28 @@ class MainActivity : AppCompatActivity() {
     // set up by the GPX workout itself, and hidden again here when no workout is running.
     // compactConnected: connected without a workout, the compact panel shows only live metrics
     // in place of the classic metric cards, between the setup controls.
+    // trainerSaved: a trainer has connected before, so workouts can be set up in its levels.
     private fun applyLayout(
-        linked: Boolean, running: Boolean, gpx: Boolean, compact: Boolean,
-        compactConnected: Boolean = false
+        linked: Boolean, running: Boolean, compact: Boolean,
+        compactConnected: Boolean = false, route: Boolean = false, trainerSaved: Boolean = false
     ) {
         fun View.show(visible: Boolean) {
             visibility = if (visible) View.VISIBLE else View.GONE
         }
         placeCompactPanel(inline = compactConnected)
-        compactWorkoutView.setWorkoutMode(compact)
+        compactWorkoutView.setWorkoutMode(compact, route)
         compactWorkoutView.setVisible(compact || compactConnected)
         val classic = !compact
         listOf(findViewById<View>(R.id.toolbar), connectionStatusTextView,
             findViewById<View>(R.id.copyrightTextView)).forEach { it.show(classic) }
-        // The layout is chosen before a workout starts, whether or not the trainer is connected
-        compactLayoutCheckBox.show(!running)
         // A running workout keeps going while disconnected, so the user can reconnect
         // or still pause and stop (and save) it
         scanButton.show(classic && !linked)
+        // Without a connection, workouts can still be set up and saved, but not started
+        val start = !linked && !running
+        listOf(scanHintTextView, workoutsHintTextView, workoutsButton).forEach { it.show(start) }
+        workoutsButton.isEnabled = trainerSaved
+        workoutsHintTextView.setText(if (trainerSaved) R.string.workouts_hint else R.string.workouts_hint_no_trainer)
         updateDeviceListVisibility()
         disconnectButton.show(linked && !running)
         workoutLauncher.show(linked && !running)
@@ -446,7 +462,8 @@ class MainActivity : AppCompatActivity() {
         pauseResumeWorkoutButton.show(classic && running)
         dataScrollView.show(classic && (running || linked) && !compactConnected)
         workoutStatusCard.show(running)
-        workoutChartCard.show(running && !gpx)
+        // Timed workouts show their target profile, GPX rides the route's grade
+        workoutChartCard.show(running)
         if (!running) mapCard.show(false)
     }
 
@@ -458,7 +475,7 @@ class MainActivity : AppCompatActivity() {
         val unset = ConstraintLayout.LayoutParams.UNSET
         val parent = ConstraintLayout.LayoutParams.PARENT_ID
         params.topToTop = if (inline) unset else parent
-        params.topToBottom = if (inline) R.id.compactLayoutCheckBox else unset
+        params.topToBottom = if (inline) R.id.scanButton else unset
         params.bottomToBottom = if (inline) unset else parent
         params.bottomToTop = if (inline) R.id.workoutLauncher else unset
         panel.layoutParams = params
@@ -469,15 +486,23 @@ class MainActivity : AppCompatActivity() {
 
     // Compact mode picks devices from the device picker dialog, so the list stays hidden there
     private fun updateDeviceListVisibility() {
-        devicesRecyclerView.visibility = if (showDeviceList && !compactLayoutCheckBox.isChecked) {
+        devicesRecyclerView.visibility = if (showDeviceList && !compactLayout) {
             View.VISIBLE
         } else View.GONE
     }
 
     private fun renderCompactWorkout() {
         if (!compactWorkoutView.isVisible) return
-        val data = bluetoothService.trainerData.value
+        val data = shownTrainerData
         val workout = activeWorkout ?: return compactWorkoutView.updateMetrics(data, currentDistanceKm)
+        val track = workout.gpxTrack
+        if (track != null) {
+            compactWorkoutView.renderRoute(
+                track.name, workoutElapsedSeconds, workoutPaused, data, cumulativeDistance,
+                track.totalDistance, currentGrade(track), bluetoothService.connectionState.value
+            )
+            return
+        }
         compactWorkoutView.render(
             workout, workoutElapsedSeconds, workoutPaused, data,
             currentDistanceKm, bluetoothService.connectionState.value
@@ -522,15 +547,10 @@ class MainActivity : AppCompatActivity() {
             setPinchZoom(false)
             legend.isEnabled = false
             axisRight.isEnabled = false
-            axisLeft.apply {
-                textColor = Color.DKGRAY
-                setDrawGridLines(true)
-                gridColor = Color.LTGRAY
-            }
+            useThemeColors()
+            axisLeft.setDrawGridLines(true)
             xAxis.apply {
-                textColor = Color.DKGRAY
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 granularity = 1f
             }
         }
@@ -544,20 +564,27 @@ class MainActivity : AppCompatActivity() {
             setPinchZoom(false)
             legend.isEnabled = false
             axisRight.isEnabled = false
-            axisLeft.apply {
-                textColor = Color.DKGRAY
-                setDrawGridLines(true)
-                gridColor = Color.LTGRAY
-            }
+            useThemeColors()
+            axisLeft.setDrawGridLines(true)
             xAxis.apply {
-                textColor = Color.DKGRAY
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 granularity = 1f
             }
         }
     }
     
+    // X axis labels of the profile chart: elapsed time for timed workouts, distance for GPX rides
+    private val elapsedTimeFormatter = object : ValueFormatter() {
+        override fun getFormattedValue(value: Float): String {
+            val mins = (value / 60).toInt()
+            val secs = (value % 60).toInt()
+            return "%d:%02d".format(mins, secs)
+        }
+    }
+    private val distanceKmFormatter = object : ValueFormatter() {
+        override fun getFormattedValue(value: Float) = "%.1f km".format(value)
+    }
+
     private fun setupWorkoutProfileChart() {
         workoutProfileChart.apply {
             description.isEnabled = false
@@ -566,16 +593,14 @@ class MainActivity : AppCompatActivity() {
             setScaleEnabled(false)
             setPinchZoom(false)
             legend.isEnabled = true
-            legend.textColor = Color.DKGRAY
             legend.textSize = 12f
             setExtraOffsets(10f, 10f, 10f, 10f)
             axisRight.isEnabled = false
+            useThemeColors()
             axisLeft.apply {
                 isEnabled = true
-                textColor = Color.BLACK
                 textSize = 12f
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 axisMinimum = 0f
                 axisMaximum = 100f
                 granularity = 10f
@@ -583,206 +608,16 @@ class MainActivity : AppCompatActivity() {
                 setLabelCount(6, false)
             }
             xAxis.apply {
-                textColor = Color.BLACK
                 textSize = 10f
                 setDrawGridLines(true)
-                gridColor = Color.LTGRAY
                 position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 granularity = 30f
                 setDrawLabels(true)
-                valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
-                    override fun getFormattedValue(value: Float): String {
-                        val mins = (value / 60).toInt()
-                        val secs = (value % 60).toInt()
-                        return "%d:%02d".format(mins, secs)
-                    }
-                }
+                valueFormatter = elapsedTimeFormatter
             }
         }
     }
     
-    private fun setupMap() {
-        Log.d(TAG, "Setting up MapView")
-        try {
-            mapView.apply {
-                Log.d(TAG, "MapView instance: $this")
-                
-                // Important: Set tile source FIRST
-                setTileSource(TileSourceFactory.MAPNIK)
-                Log.d(TAG, "Tile source set to MAPNIK")
-                
-                // Enable controls
-                setMultiTouchControls(true)
-                setBuiltInZoomControls(false)
-                
-                // CRITICAL: These settings are essential for tile loading
-                isTilesScaledToDpi = true
-                setUseDataConnection(true)
-                isHorizontalMapRepetitionEnabled = false
-                isVerticalMapRepetitionEnabled = false
-                
-                // Set zoom limits
-                minZoomLevel = 3.0
-                maxZoomLevel = 19.0
-                
-                // Set initial position (Paris) and zoom
-                controller.setZoom(5.0)
-                controller.setCenter(GeoPoint(48.8566, 2.3522))
-                
-                Log.d(TAG, "MapView setup complete, visibility will be: ${View.VISIBLE}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up map", e)
-            e.printStackTrace()
-        }
-    }
-    
-    private fun displayGpxTrackOnMap(track: GpxTrack) {
-        Log.d(TAG, "=== Displaying GPX track on map ===")
-        Log.d(TAG, "Track: ${track.name}, ${track.points.size} points")
-        
-        try {
-            // Ensure map is visible and laid out
-            if (mapView.width == 0 || mapView.height == 0) {
-                Log.w(TAG, "MapView not laid out yet, posting display")
-                mapView.post {
-                    displayGpxTrackOnMap(track)
-                }
-                return
-            }
-            
-            Log.d(TAG, "MapView dimensions: ${mapView.width}x${mapView.height}")
-            
-            // Clear existing overlays
-            mapView.overlays.clear()
-            currentPositionMarker = null
-            routePolyline = null
-            
-            if (track.points.isEmpty()) {
-                Log.w(TAG, "No points in GPX track")
-                return
-            }
-            
-            // Convert to GeoPoints
-            val geoPoints = track.points.map { point ->
-                GeoPoint(point.latitude, point.longitude)
-            }
-            
-            if (geoPoints.isEmpty()) {
-                Log.w(TAG, "No valid geo points")
-                return
-            }
-            
-            Log.d(TAG, "Points range: ${geoPoints.first()} to ${geoPoints.last()}")
-            
-            // Create and add polyline
-            val polyline = Polyline(mapView).apply {
-                setPoints(geoPoints)
-                outlinePaint.color = Color.BLUE
-                outlinePaint.strokeWidth = 10f
-                outlinePaint.isAntiAlias = true
-            }
-            
-            mapView.overlays.add(polyline)
-            routePolyline = polyline
-            
-            Log.d(TAG, "Polyline added, ${mapView.overlays.size} overlays total")
-            
-            // Zoom to show entire route with proper padding
-            if (geoPoints.size > 1) {
-                val bounds = org.osmdroid.util.BoundingBox.fromGeoPoints(geoPoints)
-                Log.d(TAG, "Zooming to bounds: $bounds")
-                
-                // Calculate center point
-                val centerLat = (bounds.latNorth + bounds.latSouth) / 2
-                val centerLon = (bounds.lonEast + bounds.lonWest) / 2
-                val center = GeoPoint(centerLat, centerLon)
-                
-                // Calculate appropriate zoom level to fit the bounds
-                val latSpan = Math.abs(bounds.latNorth - bounds.latSouth)
-                val lonSpan = Math.abs(bounds.lonEast - bounds.lonWest)
-                
-                // Estimate zoom level based on span with better scaling
-                val maxSpan = maxOf(latSpan, lonSpan) * 1.3 // Add 30% padding
-                val zoom = when {
-                    maxSpan > 10.0 -> 6.0
-                    maxSpan > 5.0 -> 7.5
-                    maxSpan > 2.0 -> 9.0
-                    maxSpan > 1.0 -> 10.5
-                    maxSpan > 0.5 -> 11.5
-                    maxSpan > 0.25 -> 12.5
-                    maxSpan > 0.125 -> 13.5
-                    maxSpan > 0.05 -> 14.5
-                    maxSpan > 0.025 -> 15.5
-                    else -> 16.0
-                }
-                
-                Log.d(TAG, "Setting center: $center, zoom: $zoom (span: lat=$latSpan, lon=$lonSpan, max=$maxSpan)")
-                
-                // Set center and zoom
-                mapView.controller.setCenter(center)
-                mapView.controller.setZoom(zoom)
-            } else {
-                // Single point - just center on it
-                mapView.controller.setCenter(geoPoints.first())
-                mapView.controller.setZoom(16.0)
-            }
-            
-            // Force redraw
-            mapView.invalidate()
-            
-            Log.d(TAG, "=== Map display complete ===")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error displaying GPX track on map", e)
-            e.printStackTrace()
-            throw e
-        }
-    }
-    
-    private fun updateMapPosition(distanceMeters: Double) {
-        try {
-            val track = activeWorkout?.gpxTrack ?: return
-            val position = track.getPointAtDistance(distanceMeters) ?: return
-            
-            Log.d(TAG, "Updating map position: distance=${distanceMeters}m, lat=${position.latitude}, lon=${position.longitude}")
-            
-            // Remove old marker
-            currentPositionMarker?.let { mapView.overlays.remove(it) }
-            
-            // Create new marker
-            val geoPoint = GeoPoint(position.latitude, position.longitude)
-            val marker = Marker(mapView).apply {
-                this.position = geoPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "Current Position"
-                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
-            }
-            
-            mapView.overlays.add(marker)
-            currentPositionMarker = marker
-            
-            // Center map on current position with zoom for ~500m x 300m view
-            // At latitude ~45°, zoom level 16 shows roughly 500m width
-            // Adjust based on latitude: higher latitudes need higher zoom
-            val latitude = position.latitude
-            val zoomLevel = when {
-                Math.abs(latitude) > 60 -> 16.5  // Polar regions
-                Math.abs(latitude) > 45 -> 16.0  // Mid latitudes
-                else -> 15.5  // Equatorial regions
-            }
-            
-            mapView.controller.setZoom(zoomLevel)
-            mapView.controller.animateTo(geoPoint)
-            
-            mapView.invalidate()
-            
-            Log.d(TAG, "Map position updated successfully with zoom $zoomLevel")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating map position", e)
-            // Don't crash, just skip map update
-        }
-    }
-
     private fun setupRecyclerView() {
         deviceAdapter = DeviceAdapter { device ->
             bluetoothService.connect(device.device)
@@ -857,17 +692,29 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Remember each trainer's resistance levels, so workouts can be set up without it
+        lifecycleScope.launch {
+            bluetoothService.connectedTrainer.collect { trainer ->
+                if (trainer != null) savedTrainerStorage.save(trainer)
+            }
+        }
+
         // Observe trainer data
         lifecycleScope.launch {
-            bluetoothService.trainerData.collect { data ->
+            bluetoothService.trainerData.collect { reported ->
+                // Workouts count the distance once per workout second; without one it follows the
+                // trainer's speed from message to message
+                if (activeWorkout == null) {
+                    freeRideSample?.let { cumulativeDistance += it.distanceUntil(reported) }
+                    freeRideSample = reported
+                } else {
+                    freeRideSample = null
+                }
+                val data = shownTrainerData
                 powerTextView.text = getString(R.string.power_format, data.power)
                 cadenceTextView.text = getString(R.string.cadence_format, data.cadence)
                 speedTextView.text = getString(R.string.speed_format, data.speed)
-                
-                // Update distance display if workout is active
-                if (activeWorkout != null) {
-                    distanceTextView.text = getString(R.string.distance_format, currentDistanceKm)
-                }
+                distanceTextView.text = getString(R.string.distance_format, currentDistanceKm)
                 
                 // Update charts
                 updateCharts(data.power, data.speed)
@@ -923,17 +770,24 @@ class MainActivity : AppCompatActivity() {
         speedChart.invalidate()
     }
     
-    // Called once per (unpaused) workout second, so averages are time-weighted
-    // and independent of how often the trainer sends notifications
-    private fun recordWorkoutData(data: com.kickr.trainer.model.TrainerData) {
-        if (activeWorkout == null || workoutStartTime == 0L) return
+    // The trainer's data as shown and recorded. During GPX rides the speed along the route replaces the
+    // trainer's flywheel speed, so the speed matches the distance covered. The ride's physics read the
+    // trainer's own values.
+    private val shownTrainerData: TrainerData
+        get() = bluetoothService.trainerData.value.let { data ->
+            if (activeWorkout?.gpxTrack != null) data.copy(speed = (virtualSpeed * 3.6).toFloat()) else data
+        }
 
+    // Called once per (unpaused) workout second, so averages are time-weighted
+    // and independent of how often the trainer sends notifications.
+    // GPX rides pass the grade sent to the trainer in that second.
+    private fun recordWorkoutData(grade: Double? = null) {
+        if (activeWorkout == null || workoutStartTime == 0L) return
+        val data = shownTrainerData
+
+        // GPX rides control the trainer by grade, which is recorded instead of a resistance level
         val currentResistance = activeWorkout?.let { workout ->
-            if (workout.gpxTrack != null) {
-                workout.getResistanceAtDistance(cumulativeDistance)
-            } else {
-                workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
-            }
+            if (workout.gpxTrack != null) 0 else workout.getCurrentInterval(workoutElapsedSeconds)?.resistance ?: 0
         } ?: 0
         val targetPower = activeWorkout?.let { workout ->
             if (workout.gpxTrack == null && workout.type == WorkoutType.POWER) {
@@ -952,7 +806,8 @@ class MainActivity : AppCompatActivity() {
             heartRate = data.heartRate,
             resistance = currentResistance,
             distance = cumulativeDistance,
-            targetPower = targetPower
+            targetPower = targetPower,
+            grade = grade
         )
         
         workoutDataPoints.add(dataPoint)
@@ -962,7 +817,7 @@ class MainActivity : AppCompatActivity() {
         scanButton.setOnClickListener {
             if (bluetoothService.isScanning.value) {
                 bluetoothService.stopScan()
-            } else if (compactLayoutCheckBox.isChecked) {
+            } else if (compactLayout) {
                 // Same picker the compact workout uses for reconnecting; it starts the scan
                 showCompactReconnectDialog()
             } else {
@@ -989,24 +844,12 @@ class MainActivity : AppCompatActivity() {
             activeWorkout = workout
             startWorkout(name)
         }
-        setupWorkoutButton.setOnClickListener {
-            Log.d(TAG, "Setup Workout button clicked")
-            val intent = Intent(this, WorkoutSetupActivity::class.java)
-                .putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
-                .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
-            workoutSetupLauncher.launch(intent)
-        }
+        setupWorkoutButton.setOnClickListener { openWorkoutSetup() }
+        workoutsButton.setOnClickListener { openWorkoutSetup() }
         
         viewGpxButton.setOnClickListener {
             val intent = Intent(this, GpxMapActivity::class.java)
             gpxMapLauncher.launch(intent)
-        }
-        
-        viewMapButton.setOnClickListener {
-            // Open map with current position during GPX workout
-            val intent = Intent(this, GpxMapActivity::class.java)
-            intent.putExtra(GpxMapActivity.EXTRA_CURRENT_DISTANCE, cumulativeDistance)
-            startActivity(intent)
         }
         
         stopWorkoutButton.setOnClickListener {
@@ -1018,6 +861,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    // From the + next to the saved workouts when connected, or from the start screen without a connection
+    private fun openWorkoutSetup() {
+        Log.d(TAG, "Setup Workout button clicked")
+        val intent = Intent(this, WorkoutSetupActivity::class.java)
+        if (isTrainerLinked) {
+            intent.putExtra("min_resistance_level", bluetoothService.minResistanceLevel)
+                .putExtra("max_resistance_level", bluetoothService.maxResistanceLevel)
+        } else {
+            // The setup takes the levels of a saved trainer
+            intent.putExtra("trainer_connected", false)
+        }
+        workoutSetupLauncher.launch(intent)
+    }
+
     private fun generateBeepSound(file: File, frequency: Double, durationMs: Int) {
         try {
             val sampleRate = 44100
@@ -1260,6 +1117,8 @@ class MainActivity : AppCompatActivity() {
             // Paused
             workoutActiveMillis += SystemClock.elapsedRealtime() - workoutResumedAt
             workoutPausedAtSecond = workoutElapsedSeconds
+            // A GPX ride stands still while paused and starts again from standstill
+            virtualSpeed = 0.0
             pauseResumeWorkoutButton.text = getString(R.string.resume_workout)
             Toast.makeText(this, "Workout Paused", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Workout paused at ${workoutElapsedSeconds}s")
@@ -1381,13 +1240,10 @@ class MainActivity : AppCompatActivity() {
 
             // Calculate distance for resistance workouts (not GPX)
             if (workout.gpxTrack == null) {
-                val currentSpeed = bluetoothService.trainerData.value.speed
-                val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
-                val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
-                cumulativeDistance += distancePerSecond * secondsDelta
+                cumulativeDistance += bluetoothService.trainerData.value.plausibleSpeedMps * secondsDelta
             }
 
-            recordWorkoutData(bluetoothService.trainerData.value)
+            recordWorkoutData()
             
             val currentIndex = workout.getCurrentIntervalIndex(workoutElapsedSeconds)
             if (currentIndex >= 0) {
@@ -1468,16 +1324,7 @@ class MainActivity : AppCompatActivity() {
             WorkoutType.POWER -> R.string.power_profile
         })
         
-        val dataSet = LineDataSet(entries, label).apply {
-            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-            lineWidth = 3f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(true)
-            fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
-            fillAlpha = 50
-        }
+        val dataSet = profileLineDataSet(entries, label)
         
         // Calculate max value and set Y-axis to 110% of max
         val maxValue = when (workout.type) {
@@ -1487,7 +1334,13 @@ class MainActivity : AppCompatActivity() {
         val yMax = maxValue * 1.1f
         
         workoutProfileChart.data = LineData(dataSet)
-        workoutProfileChart.xAxis.axisMaximum = workout.totalDuration.toFloat()
+        // The chart may have shown a GPX ride's distances before
+        workoutProfileChart.xAxis.apply {
+            valueFormatter = elapsedTimeFormatter
+            granularity = 30f
+            axisMinimum = 0f
+            axisMaximum = workout.totalDuration.toFloat()
+        }
         workoutProfileChart.axisLeft.apply {
             axisMinimum = 0f
             axisMaximum = yMax
@@ -1519,16 +1372,7 @@ class MainActivity : AppCompatActivity() {
             WorkoutType.POWER -> "Target Power (W)"
         }
         
-        val profileDataSet = LineDataSet(entries, label).apply {
-            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark)
-            lineWidth = 3f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            setDrawFilled(true)
-            fillColor = ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_light)
-            fillAlpha = 50
-        }
+        val profileDataSet = profileLineDataSet(entries, label)
         
         // Calculate max value and set Y-axis to 110% of max
         val maxValue = when (workout.type) {
@@ -1538,19 +1382,8 @@ class MainActivity : AppCompatActivity() {
         val yMax = maxValue * 1.1f
         
         // Add progress indicator line
-        val progressEntries = listOf(
-            Entry(elapsedSeconds.toFloat(), 0f),
-            Entry(elapsedSeconds.toFloat(), yMax)
-        )
         
-        val progressDataSet = LineDataSet(progressEntries, "Current Position").apply {
-            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
-            lineWidth = 3f
-            setDrawCircles(false)
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-            enableDashedLine(10f, 5f, 0f)
-        }
+        val progressDataSet = positionLineDataSet(elapsedSeconds.toFloat(), 0f, yMax)
         
         workoutProfileChart.data = LineData(profileDataSet, progressDataSet)
         workoutProfileChart.axisLeft.apply {
@@ -1564,6 +1397,51 @@ class MainActivity : AppCompatActivity() {
         workoutProfileChart.invalidate()
     }
     
+    // Dashed vertical line where the rider is now
+    private fun positionLineDataSet(x: Float, yMin: Float, yMax: Float) =
+        LineDataSet(listOf(Entry(x, yMin), Entry(x, yMax)), "Current Position").apply {
+            color = ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
+            lineWidth = 3f
+            setDrawCircles(false)
+            setDrawValues(false)
+            mode = LineDataSet.Mode.LINEAR
+            enableDashedLine(10f, 5f, 0f)
+        }
+
+    // GPX rides: the grade sent to the trainer along the route, over distance in km
+    private fun buildGradeProfileChart(track: GpxTrack) {
+        val samples = track.gradeProfile
+        gradeProfileDataSet = profileLineDataSet(
+            samples.map { (distance, grade) -> Entry((distance / 1000).toFloat(), grade.toFloat()) },
+            "Grade (%)"
+        )
+        workoutProfileTitleTextView.setText(R.string.grade_profile)
+        workoutProfileChart.axisLeft.apply {
+            fitGrades(samples.map { it.second.toFloat() })
+            granularity = 1f
+            setLabelCount(6, false)
+        }
+        workoutProfileChart.xAxis.apply {
+            valueFormatter = distanceKmFormatter
+            granularity = 0.1f
+        }
+        updateGradeProfileProgress(track, 0.0)
+    }
+
+    private fun updateGradeProfileProgress(track: GpxTrack, distanceMeters: Double) {
+        val profile = gradeProfileDataSet ?: return
+        val visible = GradeProfile.visibleRange(distanceMeters, track.totalDistance)
+        workoutProfileChart.xAxis.apply {
+            axisMinimum = (visible.start / 1000).toFloat()
+            axisMaximum = (visible.endInclusive / 1000).toFloat()
+        }
+        val yAxis = workoutProfileChart.axisLeft
+        val position = positionLineDataSet((distanceMeters / 1000).toFloat(), yAxis.axisMinimum, yAxis.axisMaximum)
+        workoutProfileChart.data = LineData(profile, position)
+        workoutProfileChart.notifyDataSetChanged()
+        workoutProfileChart.invalidate()
+    }
+
     private fun stopWorkout() {
         Log.d(TAG, "Stopping workout")
         
@@ -1668,11 +1546,16 @@ class MainActivity : AppCompatActivity() {
         // Create a workout with the GPX track
         activeWorkout = Workout(
             totalDuration = estimatedDurationSeconds,
-            intervals = listOf(WorkoutInterval(estimatedDurationSeconds, 50)), // Dummy interval
+            // Only carries the estimated duration; the trainer follows the route's grade
+            intervals = listOf(WorkoutInterval(estimatedDurationSeconds, 0)),
             gpxTrack = gpxTrack
         )
         
         cumulativeDistance = 0.0
+        sentGrade = null
+        virtualSpeed = 0.0
+        compactWorkoutView.reset()
+        Log.d(TAG, "Grade fitted over %.0f m (elevation noise %.2f m)".format(gpxTrack.gradeWindow, gpxTrack.elevationNoise))
         workoutElapsedSeconds = 0
         workoutStartTime = System.currentTimeMillis()
         workoutDataPoints.clear()
@@ -1681,25 +1564,24 @@ class MainActivity : AppCompatActivity() {
         
         // The workout cards and controls are shown by updateWorkoutLayout() below
         pauseResumeWorkoutButton.text = getString(R.string.pause_workout)
-        viewMapButton.visibility = View.GONE // Hide the external map button
         
         // Try to show and setup map
         try {
             mapCard.visibility = View.VISIBLE
-            displayGpxTrackOnMap(gpxTrack)
+            routeMap.showRoute(gpxTrack)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading map", e)
             Toast.makeText(this, "Map unavailable: ${e.message}", Toast.LENGTH_SHORT).show()
             // Continue without map
             mapCard.visibility = View.GONE
         }
+        buildGradeProfileChart(gpxTrack)
         
         // Update workout info
         workoutIntervalTextView.text = "GPX: ${gpxTrack.name}"
-        workoutTimeTextView.text = String.format("%.2f / %.2f km", 0.0, gpxTrack.totalDistance / 1000)
-        workoutResistanceTextView.text = "Resistance: 50%"
+        renderRouteStatus(gpxTrack)
         
-        Toast.makeText(this, "GPX workout started! Resistance based on elevation", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "GPX workout started! The trainer follows the route's grade", Toast.LENGTH_LONG).show()
         
         // Start workout ticker; the workout ends once the route is complete
         startWorkoutTicker { secondsDelta ->
@@ -1708,53 +1590,67 @@ class MainActivity : AppCompatActivity() {
         updateWorkoutLayout()
     }
 
+    // The grade sent to the trainer; before the first update of a ride, the one that will be sent
+    private fun currentGrade(track: GpxTrack) =
+        sentGrade ?: GradeProfile.limit(track.getGradientAtDistance(cumulativeDistance), null, 0)
+
+    // Progress and grade on the classic workout card; the compact panel shows the same values
+    private fun renderRouteStatus(track: GpxTrack) {
+        workoutTimeTextView.text = getString(R.string.route_progress, currentDistanceKm, track.totalDistance / 1000)
+        workoutResistanceTextView.text = getString(R.string.grade_format, currentGrade(track))
+    }
+
     private fun updateGpxWorkout(secondsDelta: Int) {
         val workout = activeWorkout ?: return
         val gpxTrack = workout.gpxTrack ?: return
         
-        // Get current speed from trainer data (already in km/h)
-        val currentSpeed = bluetoothService.trainerData.value.speed
-        
-        // Validate speed (sanity check - if > 100 km/h, likely bad data)
-        val validSpeed = if (currentSpeed > 0 && currentSpeed < 100) currentSpeed.toDouble() else 0.0
-        
-        // Calculate distance traveled since the last update
-        val distancePerSecond = validSpeed / 3.6 // convert km/h to m/s
-        cumulativeDistance += distancePerSecond * secondsDelta
+        // Progress comes from the measured power on the grade the trainer applied, not from its
+        // flywheel speed, so descents coast faster instead of stalling (#5). Trainers that don't
+        // report power fall back to their own speed, ignoring readings of 100 km/h or more.
+        val data = bluetoothService.trainerData.value
+        val previousSpeed = virtualSpeed
+        virtualSpeed = if (data.hasPower) {
+            VirtualSpeed.advance(
+                previousSpeed, data.power.toDouble(), currentGrade(gpxTrack),
+                bluetoothService.riderBikeSettings, secondsDelta
+            )
+        } else if (data.speed >= 0 && data.speed < 100) {
+            data.speed / 3.6
+        } else {
+            previousSpeed
+        }
+        cumulativeDistance += (previousSpeed + virtualSpeed) / 2 * secondsDelta
         
         // Clamp distance to track length
         cumulativeDistance = cumulativeDistance.coerceAtMost(gpxTrack.totalDistance)
 
-        recordWorkoutData(bluetoothService.trainerData.value)
+        // Get gradient at current position on track, within the trainer's range and rate (#10)
+        val gradient = GradeProfile.limit(gpxTrack.getGradientAtDistance(cumulativeDistance), sentGrade, secondsDelta)
+        sentGrade = gradient
 
-        // Get gradient at current position on track
-        val gradient = gpxTrack.getGradientAtDistance(cumulativeDistance)
+        // Record the same grade that is sent to the trainer below
+        recordWorkoutData(gradient)
         
         // Update map position
-        updateMapPosition(cumulativeDistance)
+        routeMap.showPosition(gpxTrack, cumulativeDistance)
+        updateGradeProfileProgress(gpxTrack, cumulativeDistance)
         
         // Update UI
-        workoutTimeTextView.text = String.format(
-            "%.2f / %.2f km", 
-            cumulativeDistance / 1000, 
-            gpxTrack.totalDistance / 1000
-        )
-        workoutResistanceTextView.text = String.format(
-            "Grade: %.1f%%", 
-            gradient
-        )
+        renderRouteStatus(gpxTrack)
         
         // Send simulation parameters to trainer with actual gradient
         // This gives more realistic feel than resistance mapping
+        val settings = bluetoothService.riderBikeSettings
         bluetoothService.setSimulationParameters(
-            windSpeedMps = 0.0,      // No wind simulation
+            windSpeedMps = settings.windSpeedMps,
             gradePercent = gradient,  // Use actual track gradient
-            crr = 0.004,             // Standard rolling resistance
-            cw = 0.51                // Standard wind resistance
+            crr = settings.rollingResistance,
+            cw = settings.windResistance
         )
         
-        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h, gradient=%.1f%%".format(
-            cumulativeDistance, validSpeed, gradient
+        // With the trainer's own speed and power, so the two speeds can be compared on the flat (#8)
+        Log.d(TAG, "GPX workout: distance=%.1fm, speed=%.1f km/h (trainer %.1f km/h, %d W), gradient=%.1f%%".format(
+            cumulativeDistance, virtualSpeed * 3.6, data.speed, data.power, gradient
         ))
         
         // Check if workout complete
@@ -1829,7 +1725,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
-        if (!isWorkoutPreview) refreshSavedWorkouts()
+        if (!isWorkoutPreview) {
+            refreshSavedWorkouts()
+            // They may have been changed on the rider and bike settings screen
+            bluetoothService.applyRiderBikeSettings(riderBikeSettingsStorage.load())
+        }
     }
     
     override fun onPause() {
@@ -1857,6 +1757,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         menu.findItem(R.id.action_view_history)?.isVisible = activeWorkout == null
+        // The layout is chosen before a workout starts, whether or not the trainer is connected
+        menu.findItem(R.id.action_compact_layout)?.apply {
+            isVisible = activeWorkout == null && !isWorkoutPreview
+            isChecked = compactLayout
+        }
+        menu.findItem(R.id.action_simulation_check)?.isVisible = isDebuggable && !isWorkoutPreview &&
+            activeWorkout == null &&
+            bluetoothService.connectionState.value is KickrBluetoothService.ConnectionState.Connected
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -1864,6 +1772,17 @@ class MainActivity : AppCompatActivity() {
         return when (item.itemId) {
             R.id.action_view_history -> {
                 startActivity(Intent(this, WorkoutHistoryActivity::class.java))
+                true
+            }
+            R.id.action_compact_layout -> {
+                compactLayout = !compactLayout
+                getPreferences(MODE_PRIVATE).edit().putBoolean(COMPACT_LAYOUT_PREFERENCE, compactLayout).apply()
+                // The connected screen also follows the layout choice; this also updates the menu
+                updateWorkoutLayout()
+                true
+            }
+            R.id.action_simulation_check -> {
+                runSimulationCheck()
                 true
             }
             R.id.action_about -> {
@@ -1874,11 +1793,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Debug builds: whether the trainer supports simulation mode, see SimulationCheck
+    private fun runSimulationCheck() {
+        Toast.makeText(this, "Checking simulation mode…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val report = SimulationCheck.run(bluetoothService)
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("Simulation mode")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
     private fun showAboutDialog() {
         AlertDialog.Builder(this)
             .setTitle("About OpenTrainer")
             .setMessage("""
-                OpenTrainer v2.0
+                OpenTrainer v${BuildConfig.VERSION_NAME}
                 
                 A free and open-source cycling training app for Wahoo Kickr and compatible smart trainers.
                 
@@ -1890,7 +1822,10 @@ class MainActivity : AppCompatActivity() {
                 • Custom resistance workouts
                 • GPX-based elevation workouts
                 • Workout history and analytics
-                • 100% offline - no data collection
+                • No data collection
+                
+                Internet use:
+                Resistance and power workouts work fully offline. The internet is only used to load OpenStreetMap map tiles, on the GPX screen and during GPX rides.
                 
                 This application is open source and respects your privacy.
             """.trimIndent())

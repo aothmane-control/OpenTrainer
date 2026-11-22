@@ -5,6 +5,54 @@ All notable changes to OpenTrainer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1] - 2026-11-22
+
+### Added - Compact Workout Layout
+- **Compact Layout:** A full-screen workout view with one large metric (tap another to swap), the time remaining, the current and next target, and tabs for the profile, power and speed charts. Used for timed workouts and GPX rides.
+- **On by Default:** The compact layout is now the default; it is switched in the overflow menu ("Use compact workout layout"). A layout chosen before is kept.
+- **Reconnecting:** The compact connection button shows the connection state and opens a device picker to reconnect or switch trainers.
+- **Screen Stays On:** The screen no longer turns off during a workout.
+
+### Added - Workouts
+- **Start Screen:** Two buttons, each with a sentence on what it does: Scan for Devices, and Create, Edit or Delete Workouts.
+- **Saved Workouts on the Main Screen:** Pick a saved workout and start it with ▶; the last one started is selected.
+- **Trainer Resistance Levels:** Resistance workouts use the levels the trainer reports (0-100 on a KICKR CORE) instead of percent.
+- **Workouts Without a Trainer:** Each trainer's levels are saved when it connects, so workouts can be created, edited and deleted while no trainer is connected, picking the trainer whose levels to use. Starting still needs a connection.
+- **Load and Delete Separately:** Load Workout loads the workout picked; Delete Existing Workout is its own button and asks before deleting.
+- **Level Check:** Intervals are checked against the trainer's levels when they are added, edited, saved and started.
+- **Distance Without a Workout:** The distance also counts while riding connected without a workout.
+
+### Added - GPX Rides
+- **Rider & Bike Settings:** Rider weight, bike weight, wheel circumference, rolling resistance (Crr), wind resistance (Cw) and wind speed, saved and used to simulate the route. Rider plus bike weight is sent to the trainer.
+- **Virtual Speed:** The rider moves along the route at the speed the measured power gives on the road for that grade, mass and air drag, instead of the trainer's flywheel speed, so descents coast and climbs slow down as outside. The speed shown and recorded is this route speed.
+- **Grade Profile:** The route's grade is plotted during the ride and in the workout summary, and the grade sent to the trainer is recorded every second.
+- **Smoother, Truer Grades:** The grade is fitted over a distance that suits the elevation noise of the file, with GPS spikes removed, gaps without elevation interpolated and separate track segments joined. It stays within -15 % to 20 % and changes by at most 2 points per second. Distances are measured on the WGS-84 ellipsoid.
+- **Map Tab:** The compact layout shows the route map, which follows the rider and waits 10 s after being touched before following again.
+- **Faster Loading:** GPX files are read and their grade fitted off the main thread.
+- **Test Routes:** `testdata/` has routes with known grades, gaps and a flat route for checking the trainer.
+
+### Changed
+- **View History** moved into the overflow menu.
+- **Dark Mode:** Buttons, tabs, chart labels, the connection status and history badges are readable in dark mode; the toolbar keeps its blue.
+- **Overflow Menu:** Readable dark text on a light menu.
+- **About:** Shows the installed version, and says that the internet is only used for the OpenStreetMap tiles on the GPX screen and during GPX rides; resistance and power workouts work fully offline.
+- **Logging:** One log line per trainer message; status messages are logged when they change, and a trainer that doesn't keep the weight it is sent is reported.
+
+### Fixed
+- **Workout Names in History:** Saved workouts were listed as "Custom Workout" in the history (reported by qrilka).
+- **Scan Status:** The status text after stopping a scan.
+- **Negative Power:** A trainer reporting a few negative watts (for example when backpedalling) was read as about 65,000 W.
+- **GPX Files:** Elevations or coordinates written as NaN or Infinity are treated as missing instead of breaking the ride; decimal heart rate, cadence and power values are kept.
+- **Simulation Parameters:** Rounded to the field resolutions instead of truncated (0.29 was sent as 0.28).
+- **Wind Resistance:** At least 0.1 kg/m, since without air drag the speed on descents grew without limit.
+- **Ride Map:** Dragging and pinching the map during a ride no longer scroll the page or fight the map's re-centring.
+
+### Technical
+- **Version:** Updated to 3.1 (versionCode=7, versionName="3.1"), APK OpenTrainer-3.1.apk
+- Debug builds: a simulation mode check in the overflow menu reports what the trainer advertises and applies.
+- Espresso 3.7.0 and androidx.test.ext:junit 1.3.0; unit tests fail on Android calls instead of getting default values.
+- New unit tests for GPX parsing, grade fitting, the virtual speed, FTMS parsing, rider settings and resistance levels, and instrumented tests for the compact layout, saved trainers, the workout setup and the ride map.
+
 ## [3.0] - 2026-11-01
 
 ### Changed - Google Play Preparation (breaking)

@@ -14,5 +14,6 @@ data class WorkoutDataPoint(
     val heartRate: Int,           // Heart rate in BPM
     val resistance: Int,          // Trainer resistance percentage
     val distance: Double,         // Cumulative distance in meters
-    val targetPower: Int = 0      // Target power in watts (power workouts only)
+    val targetPower: Int = 0,     // Target power in watts (power workouts only)
+    val grade: Double? = null     // Grade sent to the trainer in % (GPX rides only)
 )

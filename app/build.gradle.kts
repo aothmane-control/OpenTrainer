@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.aothmane.opentrainer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "3.0"
+        versionCode = 7
+        versionName = "3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -74,6 +74,8 @@ android {
 
     buildFeatures {
         viewBinding = true
+        // BuildConfig.VERSION_NAME for the About dialog
+        buildConfig = true
     }
 }
 
@@ -97,6 +99,9 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    // The XmlPullParser behind android.util.Xml, so GpxParser runs in unit tests
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    // 3.6 and later click on current Android versions; 3.5 looked up a removed InputManager method
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }

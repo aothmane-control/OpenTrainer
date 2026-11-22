@@ -19,12 +19,17 @@ import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import com.kickr.trainer.model.KickrDevice
+import com.kickr.trainer.model.RiderBikeSettings
 import com.kickr.trainer.model.TrainerData
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.roundToInt
 
 @SuppressLint("MissingPermission")
 class KickrBluetoothService(private val context: Context) {
@@ -51,6 +56,7 @@ class KickrBluetoothService(private val context: Context) {
     val trainerData: StateFlow<TrainerData> = _trainerData.asStateFlow()
     
     private var currentPower = 0
+    private var powerReported = false
     private var currentCadence = 0
     private var currentSpeed = 0f
     private var currentHeartRate = 0
@@ -60,10 +66,36 @@ class KickrBluetoothService(private val context: Context) {
     @Volatile private var resistanceRange = ResistanceRange.DEFAULT
     val minResistanceLevel get() = resistanceRange.minLevel
     val maxResistanceLevel get() = resistanceRange.maxLevel
+    // The connected trainer with its resistance range, once the range is known (null until then),
+    // so the app can remember it and set up workouts in its levels without a connection
+    private val _connectedTrainer = MutableStateFlow<Trainer?>(null)
+    val connectedTrainer: StateFlow<Trainer?> = _connectedTrainer.asStateFlow()
+    // What the trainer says it supports, read once per connection (null until read)
+    @Volatile var features: FitnessMachineFeatures? = null
+        private set
+    // The trainer's replies to control point commands and its Fitness Machine Status messages
+    private val _controlPointResponses = MutableSharedFlow<ControlPointResponse>(extraBufferCapacity = 16)
+    val controlPointResponses: SharedFlow<ControlPointResponse> = _controlPointResponses.asSharedFlow()
+    private val _machineStatus = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    val machineStatus: SharedFlow<ByteArray> = _machineStatus.asSharedFlow()
+    // The rider and bike the trainer simulates with, sent on every connection
+    @Volatile var riderBikeSettings = RiderBikeSettings.DEFAULT
+        private set
+    // The weight the trainer simulates with (User Data Service), if it lets apps set it
+    private val weightCharacteristic: BluetoothGattCharacteristic?
+        get() = bluetoothGatt?.getService(GattAttributes.USER_DATA_SERVICE)
+            ?.getCharacteristic(GattAttributes.WEIGHT)
+    val hasWeightCharacteristic: Boolean get() = weightCharacteristic != null
+    // The weight last written (raw), so the read-back shows whether the trainer kept it
+    @Volatile private var sentWeightRaw = -1
     private var lastResistanceCommandTime = 0L
     private val RESISTANCE_COMMAND_DELAY_MS = 200L // Minimum delay between resistance commands
     private val commandHandler = Handler(Looper.getMainLooper())
     private var deferredCommand: Runnable? = null
+    // The last simulation command logged, so an unchanged one isn't logged every second
+    private var lastSimulationCommand: ByteArray? = null
+    // Likewise the last status message, which a trainer may send for every simulation command
+    private var lastMachineStatus: ByteArray? = null
 
     // Android allows only one outstanding GATT operation at a time. Operations are queued
     // and the next one is started from the matching completion callback.
@@ -84,6 +116,18 @@ class KickrBluetoothService(private val context: Context) {
     private val gattOperationQueue = ArrayDeque<GattOperation>()
     private var gattOperationInProgress = false
     
+    data class ControlPointResponse(val requestOpcode: Int, val resultCode: Int) {
+        val isSuccess get() = resultCode == 0x01
+        val resultName get() = when (resultCode) {
+            0x01 -> "Success"
+            0x02 -> "Op Code Not Supported"
+            0x03 -> "Invalid Parameter"
+            0x04 -> "Operation Failed"
+            0x05 -> "Control Not Permitted"
+            else -> "Unknown"
+        }
+    }
+
     sealed class ConnectionState {
         object Disconnected : ConnectionState()
         object Connecting : ConnectionState()
@@ -110,14 +154,15 @@ class KickrBluetoothService(private val context: Context) {
                 
                 // Update or add device
                 val existingIndex = currentList.indexOfFirst { it.device.address == device.address }
+                // Devices advertise several times a second; each is logged once
                 if (existingIndex >= 0) {
                     currentList[existingIndex] = kickrDevice
                 } else {
                     currentList.add(kickrDevice)
+                    Log.d(TAG, "Found device: $name (${device.address}) RSSI: $rssi Services: ${result.scanRecord?.serviceUuids}")
                 }
                 
                 _discoveredDevices.value = currentList
-                Log.d(TAG, "Found device: $name (${device.address}) RSSI: $rssi Services: ${result.scanRecord?.serviceUuids}")
             }
         }
         
@@ -182,38 +227,35 @@ class KickrBluetoothService(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
-            Log.d(TAG, "Characteristic changed: UUID=${characteristic.uuid}, size=${value.size} bytes")
+            verbose { "Characteristic changed: UUID=${characteristic.uuid}, bytes: ${value.toHex()}" }
             when (characteristic.uuid) {
-                GattAttributes.INDOOR_BIKE_DATA -> {
-                    Log.d(TAG, "→ Received FTMS Indoor Bike Data notification")
-                    parseIndoorBikeData(value)
-                }
-                GattAttributes.HEART_RATE_MEASUREMENT -> {
-                    Log.d(TAG, "→ Received Heart Rate Measurement notification")
-                    parseHeartRateMeasurement(value)
-                }
+                GattAttributes.INDOOR_BIKE_DATA -> parseIndoorBikeData(value)
+                GattAttributes.HEART_RATE_MEASUREMENT -> parseHeartRateMeasurement(value)
                 GattAttributes.FITNESS_MACHINE_CONTROL_POINT -> {
-                    Log.d(TAG, "→ Received FTMS Control Point response")
-                    val hexString = value.joinToString(" ") { "0x%02X".format(it) }
-                    Log.d(TAG, "   Response bytes: $hexString")
                     // Response format: 0x80 (Response Code), request opcode, result code
                     if (value.size >= 3 && (value[0].toInt() and 0xFF) == 0x80) {
-                        val requestOpcode = value[1].toInt() and 0xFF
-                        val resultCode = value[2].toInt() and 0xFF
-                        val result = when (resultCode) {
-                            0x01 -> "Success"
-                            0x02 -> "Op Code Not Supported"
-                            0x03 -> "Invalid Parameter"
-                            0x04 -> "Operation Failed"
-                            0x05 -> "Control Not Permitted"
-                            else -> "Unknown"
+                        val response = ControlPointResponse(value[1].toInt() and 0xFF, value[2].toInt() and 0xFF)
+                        val message = {
+                            "Response to opcode 0x%02X: 0x%02X (%s)".format(
+                                response.requestOpcode, response.resultCode, response.resultName
+                            )
                         }
-                        val message = "   Response to opcode 0x%02X: 0x%02X (%s)".format(requestOpcode, resultCode, result)
-                        if (resultCode == 0x01) Log.d(TAG, message) else Log.w(TAG, message)
+                        // Every command is answered, so only the ones the trainer rejects are logged
+                        if (response.isSuccess) verbose(message) else Log.w(TAG, message())
+                        _controlPointResponses.tryEmit(response)
+                    } else {
+                        Log.w(TAG, "Unexpected control point indication: ${value.toHex()}")
                     }
                 }
+                GattAttributes.FITNESS_MACHINE_STATUS -> {
+                    if (!value.contentEquals(lastMachineStatus)) {
+                        Log.d(TAG, "Fitness Machine Status: ${value.toHex()}")
+                        lastMachineStatus = value
+                    }
+                    _machineStatus.tryEmit(value)
+                }
                 else -> {
-                    Log.d(TAG, "→ Unknown characteristic: ${characteristic.uuid}")
+                    Log.d(TAG, "Unknown characteristic: ${characteristic.uuid}")
                 }
             }
             updateTrainerData()
@@ -238,12 +280,28 @@ class KickrBluetoothService(private val context: Context) {
             value: ByteArray,
             status: Int
         ) {
+            if (characteristic.uuid == GattAttributes.WEIGHT) {
+                val raw = if (value.size >= 2) (value[0].toInt() and 0xFF) or ((value[1].toInt() and 0xFF) shl 8) else -1
+                if (status == BluetoothGatt.GATT_SUCCESS && raw != sentWeightRaw) {
+                    Log.w(TAG, "Trainer kept %.3f kg instead of %.3f kg: $WEIGHT_MISMATCH"
+                        .format(raw * WEIGHT_RESOLUTION_KG, sentWeightRaw * WEIGHT_RESOLUTION_KG))
+                } else {
+                    Log.d(TAG, "Trainer weight (status=$status): %.3f kg".format(raw * WEIGHT_RESOLUTION_KG))
+                }
+            }
+            if (characteristic.uuid == GattAttributes.FITNESS_MACHINE_FEATURE) {
+                features = if (status == BluetoothGatt.GATT_SUCCESS) FitnessMachineFeatures.parse(value) else null
+                Log.d(TAG, "Fitness machine features (status=$status): $features")
+            }
             if (characteristic.uuid == GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE) {
                 val range = if (status == BluetoothGatt.GATT_SUCCESS) ResistanceRange.parse(value) else null
                 if (range != null) {
                     resistanceRange = range
                     Log.d(TAG, "Supported resistance level range: $range")
+                    reportConnectedTrainer(gatt, range)
                 } else {
+                    // Not reported as the connected trainer, so the levels saved for it at an earlier
+                    // connection aren't overwritten with these
                     Log.w(TAG, "Unusable resistance level range (status=$status), keeping levels 0-100")
                 }
             }
@@ -268,14 +326,21 @@ class KickrBluetoothService(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
-            Log.d(TAG, "Characteristic write completed: UUID=${characteristic.uuid}, status=$status (${
-                when (status) {
-                    BluetoothGatt.GATT_SUCCESS -> "SUCCESS"
-                    BluetoothGatt.GATT_WRITE_NOT_PERMITTED -> "WRITE_NOT_PERMITTED"
-                    BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH -> "INVALID_ATTRIBUTE_LENGTH"
-                    else -> "ERROR_$status"
-                }
-            })")
+            // Every command is two writes, so only failed ones are logged
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                verbose { "Characteristic write completed: UUID=${characteristic.uuid}" }
+            } else if (characteristic.uuid == GattAttributes.WEIGHT) {
+                // 128 (0x80) is User Data Access Not Permitted: the trainer wants User Data Service consent
+                Log.w(TAG, "Trainer refused the weight (status=$status): $WEIGHT_MISMATCH")
+            } else {
+                Log.w(TAG, "Characteristic write failed: UUID=${characteristic.uuid}, status=$status (${
+                    when (status) {
+                        BluetoothGatt.GATT_WRITE_NOT_PERMITTED -> "WRITE_NOT_PERMITTED"
+                        BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH -> "INVALID_ATTRIBUTE_LENGTH"
+                        else -> "ERROR_$status"
+                    }
+                })")
+            }
 
             completeGattOperation()
         }
@@ -350,7 +415,7 @@ class KickrBluetoothService(private val context: Context) {
             return false
         }
 
-        Log.d(TAG, "  Command bytes: ${command.joinToString(" ") { "0x%02X".format(it) }}")
+        verbose { "Command bytes: ${command.toHex()}" }
         enqueueGattOperation(GattOperation.WriteCharacteristic(characteristic, byteArrayOf(0x00)))
         enqueueGattOperation(GattOperation.WriteCharacteristic(characteristic, command))
         return true
@@ -433,8 +498,13 @@ class KickrBluetoothService(private val context: Context) {
     private fun resetConnectionState() {
         ftmsControlPointCharacteristic = null
         resistanceRange = ResistanceRange.DEFAULT
+        _connectedTrainer.value = null
+        features = null
+        lastSimulationCommand = null
+        lastMachineStatus = null
         clearGattOperations()
         currentPower = 0
+        powerReported = false
         currentCadence = 0
         currentSpeed = 0f
         currentHeartRate = 0
@@ -504,14 +574,47 @@ class KickrBluetoothService(private val context: Context) {
         }
     }
 
-    private fun setWheelCircumference(circumferenceMm: Float) {
+    // Changed settings reach the trainer right away when connected, otherwise on the next connection
+    fun applyRiderBikeSettings(settings: RiderBikeSettings) {
+        val previous = riderBikeSettings
+        if (settings == previous) return
+        riderBikeSettings = settings
+        if (ftmsControlPointCharacteristic == null) return
+        if (settings.wheelCircumferenceMm != previous.wheelCircumferenceMm) {
+            setWheelCircumference(settings.wheelCircumferenceMm)
+        }
+        if (settings.totalWeightKg != previous.totalWeightKg) {
+            setWeight(settings.totalWeightKg)
+        }
+    }
+
+    // User Data Weight: UINT16 in 0.005 kg. The trainer uses it for the climbing force in simulation mode.
+    private fun setWeight(weightKg: Double) {
+        val characteristic = weightCharacteristic
+        if (characteristic == null) {
+            Log.w(TAG, "Cannot set weight: trainer has no User Data Weight characteristic")
+            return
+        }
+        val raw = (weightKg / WEIGHT_RESOLUTION_KG).roundToInt().coerceIn(0, 0xFFFF)
+        Log.d(TAG, "Setting trainer weight to %.1f kg (raw $raw)".format(weightKg))
+        sentWeightRaw = raw
+        enqueueGattOperation(GattOperation.WriteCharacteristic(
+            characteristic, byteArrayOf((raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
+        ))
+        // Read it back, so the log shows what the trainer kept
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) {
+            enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
+        }
+    }
+
+    private fun setWheelCircumference(circumferenceMm: Double) {
         Log.d(TAG, "========================================")
         Log.d(TAG, "FTMS SET WHEEL CIRCUMFERENCE")
         Log.d(TAG, "Setting wheel circumference to ${circumferenceMm}mm")
 
         // FTMS Set Wheel Circumference (opcode 0x12)
         // Parameter: UINT16 in 0.1mm resolution
-        val circumference01mm = (circumferenceMm * 10).toInt()
+        val circumference01mm = (circumferenceMm * 10).roundToInt()
         sendControlPointCommand(byteArrayOf(
             0x12.toByte(), // Opcode: Set Wheel Circumference
             (circumference01mm and 0xFF).toByte(),
@@ -541,41 +644,14 @@ class KickrBluetoothService(private val context: Context) {
             return
         }
 
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "FTMS SIMULATION PARAMETERS")
-        Log.d(TAG, "Grade: %.2f%%, Wind: %.2f m/s, Crr: %.4f, Cw: %.2f".format(gradePercent, windSpeedMps, crr, cw))
-        
-        // Convert parameters to FTMS format
-        // Wind Speed: SINT16, 0.001 m/s resolution
-        val windSpeed = (windSpeedMps * 1000).toInt().coerceIn(-32768, 32767).toShort()
-        
-        // Grade: SINT16, 0.01% resolution, range: -100.00% to +100.00%
-        val grade = (gradePercent * 100).toInt().coerceIn(-10000, 10000).toShort()
-        
-        // Crr: UINT8, 0.0001 resolution
-        val crrByte = (crr * 10000).toInt().coerceIn(0, 255).toByte()
-        
-        // Cw: UINT8, 0.01 kg/m resolution
-        val cwByte = (cw * 100).toInt().coerceIn(0, 255).toByte()
-        
-        Log.d(TAG, "  Wind Speed: $windSpeed (0.001 m/s units)")
-        Log.d(TAG, "  Grade: $grade (0.01%% units)")
-        Log.d(TAG, "  Crr: $crrByte")
-        Log.d(TAG, "  Cw: $cwByte")
-        
-        // Use FTMS (Fitness Machine Service)
-        val queued = sendControlPointCommand(byteArrayOf(
-            0x11.toByte(), // Opcode: Set Indoor Bike Simulation Parameters
-            (windSpeed.toInt() and 0xFF).toByte(),
-            ((windSpeed.toInt() shr 8) and 0xFF).toByte(),
-            (grade.toInt() and 0xFF).toByte(),
-            ((grade.toInt() shr 8) and 0xFF).toByte(),
-            crrByte,
-            cwByte
-        ))
-        Log.d(TAG, "========================================")
+        val command = SimulationParameters(windSpeedMps, gradePercent, crr, cw).toCommand()
+        // A ride sends this every second; it is logged when what the trainer gets changes
+        if (!command.contentEquals(lastSimulationCommand)) {
+            Log.d(TAG, "Grade: %.2f%%, Wind: %.2f m/s, Crr: %.4f, Cw: %.2f".format(gradePercent, windSpeedMps, crr, cw))
+            lastSimulationCommand = command
+        }
 
-        if (!queued) {
+        if (!sendControlPointCommand(command)) {
             Log.w(TAG, "FTMS simulation control not available")
         }
     }
@@ -613,11 +689,18 @@ class KickrBluetoothService(private val context: Context) {
         gatt.getService(GattAttributes.FITNESS_MACHINE_SERVICE)?.let { service ->
             Log.d(TAG, "Found Fitness Machine Service")
 
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_FEATURE)?.let { characteristic ->
+                enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
+            } ?: Log.w(TAG, "Fitness Machine Feature characteristic NOT found")
+
             // Read the trainer's resistance range first, so it is known before any resistance command
             service.getCharacteristic(GattAttributes.SUPPORTED_RESISTANCE_LEVEL_RANGE)?.let { characteristic ->
                 enqueueGattOperation(GattOperation.ReadCharacteristic(characteristic))
                 Log.d(TAG, "Queued read of supported resistance level range")
-            } ?: Log.w(TAG, "Supported resistance level range NOT found - assuming levels 0-100")
+            } ?: run {
+                Log.w(TAG, "Supported resistance level range NOT found - assuming levels 0-100")
+                reportConnectedTrainer(gatt, ResistanceRange.DEFAULT)
+            }
             
             // Enable Indoor Bike Data notifications
             service.getCharacteristic(GattAttributes.INDOOR_BIKE_DATA)?.let { characteristic ->
@@ -629,6 +712,16 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Queued FTMS Indoor Bike Data notifications")
                 }
             } ?: Log.w(TAG, "FTMS Indoor Bike Data characteristic NOT found")
+
+            // Status messages, e.g. the simulation parameters the trainer actually applied
+            service.getCharacteristic(GattAttributes.FITNESS_MACHINE_STATUS)?.let { characteristic ->
+                gatt.setCharacteristicNotification(characteristic, true)
+                characteristic.getDescriptor(GattAttributes.CLIENT_CHARACTERISTIC_CONFIG)?.let { descriptor ->
+                    enqueueGattOperation(GattOperation.WriteDescriptor(
+                        descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    ))
+                }
+            }
             
             // Enable Control Point notifications to receive responses from resistance commands
             service.getCharacteristic(GattAttributes.FITNESS_MACHINE_CONTROL_POINT)?.let { characteristic ->
@@ -641,8 +734,9 @@ class KickrBluetoothService(private val context: Context) {
                     Log.d(TAG, "Queued FTMS Control Point indications")
                 }
                 
-                // Set wheel circumference for proper speed calculation (2100mm = 700c road bike)
-                setWheelCircumference(2100.0f)
+                // Set wheel circumference for proper speed calculation
+                setWheelCircumference(riderBikeSettings.wheelCircumferenceMm)
+                setWeight(riderBikeSettings.totalWeightKg)
                 
                 // Send Start/Resume command to ensure trainer is in active mode
                 sendStartCommand()
@@ -664,6 +758,11 @@ class KickrBluetoothService(private val context: Context) {
         } ?: Log.d(TAG, "Heart Rate Service not available (optional)")
     }
     
+    private fun reportConnectedTrainer(gatt: BluetoothGatt, range: ResistanceRange) {
+        val device = gatt.device
+        _connectedTrainer.value = Trainer(device.address, device.name ?: device.address, range)
+    }
+
     private fun parseHeartRateMeasurement(data: ByteArray) {
         if (data.isEmpty()) return
         
@@ -685,34 +784,16 @@ class KickrBluetoothService(private val context: Context) {
             ((data[2].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
         }
         
-        Log.d(TAG, "Heart Rate: $currentHeartRate BPM")
+        verbose { "Heart Rate: $currentHeartRate BPM" }
     }
     
     private fun parseIndoorBikeData(data: ByteArray) {
         if (data.size < 3) return
         
         try {
-            // Log raw bytes for debugging
-            val hexString = data.joinToString(" ") { "0x%02X".format(it) }
-            Log.d(TAG, "========================================")
-            Log.d(TAG, "FTMS INDOOR BIKE DATA RECEIVED")
-            Log.d(TAG, "Raw bytes: $hexString")
-            Log.d(TAG, "Size: ${data.size} bytes")
-            
+            // The raw bytes are in the verbose log of onCharacteristicChanged()
             val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
             val flags = buffer.getShort().toInt() and 0xFFFF
-            
-            Log.d(TAG, "Flags: 0x${flags.toString(16).padStart(4, '0')} (binary: ${flags.toString(2).padStart(16, '0')})")
-            Log.d(TAG, "Flag breakdown:")
-            Log.d(TAG, "Flag breakdown:")
-            Log.d(TAG, "  Bit 0 (More Data): ${if (flags and 0x01 != 0) "SET (speed NOT present)" else "CLEAR (speed present)"}")
-            Log.d(TAG, "  Bit 1 (Avg Speed): ${if (flags and 0x02 != 0) "present" else "absent"}")
-            Log.d(TAG, "  Bit 2 (Cadence): ${if (flags and 0x04 != 0) "present" else "absent"}")
-            Log.d(TAG, "  Bit 3 (Avg Cadence): ${if (flags and 0x08 != 0) "present" else "absent"}")
-            Log.d(TAG, "  Bit 4 (Total Distance): ${if (flags and 0x10 != 0) "present" else "absent"}")
-            Log.d(TAG, "  Bit 5 (Resistance): ${if (flags and 0x20 != 0) "present" else "absent"}")
-            Log.d(TAG, "  Bit 6 (Power): ${if (flags and 0x40 != 0) "present" else "absent"}")
-            Log.d(TAG, "  Bit 7 (Avg Power): ${if (flags and 0x80 != 0) "present" else "absent"}")
             
             // According to FTMS spec:
             // Bit 0 = 0: Instantaneous Speed is present (UINT16, 0.01 km/h resolution)
@@ -723,56 +804,43 @@ class KickrBluetoothService(private val context: Context) {
                 if (buffer.remaining() >= 2) {
                     val speedRaw = buffer.getShort().toInt() and 0xFFFF
                     currentSpeed = speedRaw / 100.0f // Convert from 0.01 km/h to km/h
-                    Log.d(TAG, "→ Speed: raw=$speedRaw (0x${speedRaw.toString(16)}), converted=$currentSpeed km/h")
                 } else {
-                    Log.w(TAG, "→ Speed should be present but not enough data")
+                    Log.w(TAG, "Speed should be present but not enough data")
                 }
-            } else {
-                Log.d(TAG, "→ Speed: NOT PRESENT (More Data flag set)")
             }
             
-            // Average Speed - if bit 1 is set
-            if (flags and 0x02 != 0 && buffer.remaining() >= 2) {
-                val avgSpeedRaw = buffer.getShort().toInt() and 0xFFFF
-                val avgSpeed = avgSpeedRaw / 100.0f
-                Log.d(TAG, "→ Avg Speed: raw=$avgSpeedRaw (0x${avgSpeedRaw.toString(16)}), converted=$avgSpeed km/h")
-            }
+            // Skip Average Speed if present (bit 1)
+            if (flags and 0x02 != 0 && buffer.remaining() >= 2) buffer.getShort()
             
             // Instantaneous Cadence - if bit 2 is set
             if (flags and 0x04 != 0 && buffer.remaining() >= 2) {
                 val cadenceRaw = buffer.getShort().toInt() and 0xFFFF
                 currentCadence = cadenceRaw / 2 // 0.5 RPM resolution
-                Log.d(TAG, "→ Cadence: raw=$cadenceRaw (0x${cadenceRaw.toString(16)}), converted=$currentCadence RPM")
             }
             
             // Skip Average Cadence if present (bit 3)
-            if (flags and 0x08 != 0 && buffer.remaining() >= 2) {
-                val avgCadenceRaw = buffer.getShort().toInt() and 0xFFFF
-                Log.d(TAG, "→ Avg Cadence: raw=$avgCadenceRaw (skipped)")
-            }
+            if (flags and 0x08 != 0 && buffer.remaining() >= 2) buffer.getShort()
             
-            // Skip Total Distance if present (bit 4)
+            // Skip Total Distance if present (bit 4, UINT24)
             if (flags and 0x10 != 0 && buffer.remaining() >= 3) {
-                val distanceByte1 = buffer.get().toInt() and 0xFF
-                val distanceBytes2_3 = buffer.getShort().toInt() and 0xFFFF
-                val totalDistance = distanceByte1 or (distanceBytes2_3 shl 8)
-                Log.d(TAG, "→ Total Distance: raw=$totalDistance meters (skipped)")
+                buffer.get()
+                buffer.getShort()
             }
             
             // Skip Resistance Level if present (bit 5)
-            if (flags and 0x20 != 0 && buffer.remaining() >= 2) {
-                val resistanceRaw = buffer.getShort().toInt() and 0xFFFF
-                Log.d(TAG, "→ Resistance Level: raw=$resistanceRaw (skipped)")
-            }
+            if (flags and 0x20 != 0 && buffer.remaining() >= 2) buffer.getShort()
             
             // Instantaneous Power - if bit 6 is set
             if (flags and 0x40 != 0 && buffer.remaining() >= 2) {
-                val powerRaw = buffer.getShort().toInt() and 0xFFFF
-                currentPower = powerRaw // Already in watts
-                Log.d(TAG, "→ Power: raw=$powerRaw (0x${powerRaw.toString(16)}), watts=$currentPower W")
+                // SINT16 in watts; a trainer may report a few negative watts, e.g. when backpedalling
+                currentPower = buffer.getShort().toInt().coerceAtLeast(0)
+                powerReported = true
             }
             
-            Log.d(TAG, "========================================")
+            // One line per notification, about one per second
+            Log.d(TAG, "Bike data (flags 0x%04X): %.2f km/h, %d rpm, %d W".format(
+                flags, currentSpeed, currentCadence, currentPower
+            ))
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing Indoor Bike Data", e)
             e.printStackTrace()
@@ -782,6 +850,7 @@ class KickrBluetoothService(private val context: Context) {
     private fun updateTrainerData() {
         _trainerData.value = TrainerData(
             power = currentPower,
+            hasPower = powerReported,
             speed = currentSpeed,
             cadence = currentCadence,
             heartRate = currentHeartRate,
@@ -793,7 +862,18 @@ class KickrBluetoothService(private val context: Context) {
         return bluetoothAdapter?.isEnabled == true
     }
     
+    // Detail for every message, e.g. to debug the protocol. Off by default so it doesn't fill the
+    // log buffer; enable with: adb shell setprop log.tag.KickrBluetoothService VERBOSE
+    private fun verbose(message: () -> String) {
+        if (Log.isLoggable(TAG, Log.VERBOSE)) Log.v(TAG, message())
+    }
+
+    private fun ByteArray.toHex() = joinToString(" ") { "0x%02X".format(it) }
+
     companion object {
+        private const val WEIGHT_RESOLUTION_KG = 0.005
+        private const val WEIGHT_MISMATCH =
+            "it simulates climbs with its own mass, the virtual speed with rider plus bike weight"
         private const val TAG = "KickrBluetoothService"
     }
 }

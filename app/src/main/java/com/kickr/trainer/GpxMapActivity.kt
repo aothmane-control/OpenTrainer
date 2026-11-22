@@ -13,32 +13,26 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.kickr.trainer.model.GpxTrack
 import com.kickr.trainer.utils.GpxParser
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.Marker
-import kotlin.math.max
-import kotlin.math.min
+import java.io.FileNotFoundException
 
 class GpxMapActivity : AppCompatActivity() {
 
-    companion object {
-        const val EXTRA_GPX_TRACK = "gpx_track"
-        const val EXTRA_CURRENT_DISTANCE = "current_distance"
-    }
-
     private lateinit var mapView: MapView
+    private lateinit var routeMap: RouteMap
     private lateinit var loadGpxButton: Button
+    private lateinit var riderBikeButton: Button
     private lateinit var startWorkoutButton: Button
     private lateinit var trackInfoTextView: TextView
     private var currentTrack: GpxTrack? = null
-    private var currentPositionMarker: Marker? = null
 
     private val gpxFileLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -49,40 +43,32 @@ class GpxMapActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Configure osmdroid
-        Configuration.getInstance().load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
-        Configuration.getInstance().userAgentValue = packageName
+        // Before setContentView(), which creates the map
+        RouteMap.configure(this)
         
         setContentView(R.layout.activity_gpx_map)
         applyEdgeToEdgeInsets()
 
         initViews()
-        setupMap()
+        routeMap = RouteMap(mapView)
         setupClickListeners()
-        
-        // Check if we're being launched with track data (for live tracking)
-        handleIncomingIntent()
     }
 
     private fun initViews() {
         mapView = findViewById(R.id.mapView)
         loadGpxButton = findViewById(R.id.loadGpxButton)
+        riderBikeButton = findViewById(R.id.riderBikeButton)
         startWorkoutButton = findViewById(R.id.startWorkoutButton)
         trackInfoTextView = findViewById(R.id.trackInfoTextView)
-    }
-
-    private fun setupMap() {
-        mapView.setTileSource(TileSourceFactory.MAPNIK)
-        mapView.setMultiTouchControls(true)
-        mapView.controller.setZoom(13.0)
-        
-        // Default to a central location
-        mapView.controller.setCenter(GeoPoint(51.5074, -0.1278)) // London
     }
 
     private fun setupClickListeners() {
         loadGpxButton.setOnClickListener {
             gpxFileLauncher.launch(arrayOf("application/gpx+xml", "text/xml", "*/*"))
+        }
+
+        riderBikeButton.setOnClickListener {
+            startActivity(Intent(this, RiderBikeSettingsActivity::class.java))
         }
         
         startWorkoutButton.setOnClickListener {
@@ -91,8 +77,9 @@ class GpxMapActivity : AppCompatActivity() {
                 val resultIntent = Intent().apply {
                     putExtra("has_gpx_workout", true)
                     putExtra("gpx_track_name", track.name)
-                    // We'll pass the track via a singleton or save it temporarily
-                    GpxWorkoutHolder.currentTrack = track.withDistances()
+                    // We'll pass the track via a singleton or save it temporarily;
+                    // loadGpxFile() already computed its distances
+                    GpxWorkoutHolder.currentTrack = track
                 }
                 setResult(RESULT_OK, resultIntent)
                 finish()
@@ -104,135 +91,42 @@ class GpxMapActivity : AppCompatActivity() {
         }
     }
     
-    private fun handleIncomingIntent() {
-        // Check if launched for live tracking
-        val currentDistance = intent.getDoubleExtra(EXTRA_CURRENT_DISTANCE, -1.0)
-        if (currentDistance >= 0 && GpxWorkoutHolder.currentTrack != null) {
-            currentTrack = GpxWorkoutHolder.currentTrack
-            currentTrack?.let { track ->
-                displayTrackOnMap(track)
-                updateCurrentPosition(currentDistance)
-                startWorkoutButton.visibility = android.view.View.GONE
-                loadGpxButton.visibility = android.view.View.GONE
-            }
-        }
-    }
-    
-    private fun updateCurrentPosition(distanceMeters: Double) {
-        val track = currentTrack ?: return
-        val position = track.getPointAtDistance(distanceMeters)
-        
-        position?.let { point ->
-            // Remove old marker
-            currentPositionMarker?.let { mapView.overlays.remove(it) }
-            
-            // Add new position marker
-            currentPositionMarker = Marker(mapView).apply {
-                this.position = GeoPoint(point.latitude, point.longitude)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                title = "Current Position"
-                snippet = String.format("%.2f km", distanceMeters / 1000)
-                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
-            }
-            mapView.overlays.add(currentPositionMarker)
-            
-            // Center map on current position
-            mapView.controller.animateTo(GeoPoint(point.latitude, point.longitude))
-            mapView.invalidate()
-        }
-    }
-
     private fun loadGpxFile(uri: Uri) {
-        try {
-            val inputStream = contentResolver.openInputStream(uri)
-            if (inputStream == null) {
-                Toast.makeText(this, "Failed to open file", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            val parser = GpxParser()
-            val track = parser.parse(inputStream)
-
-            if (track != null && track.points.isNotEmpty()) {
-                currentTrack = track.withDistances()
-                displayTrackOnMap(currentTrack!!)
-                updateTrackInfo(currentTrack!!)
-                startWorkoutButton.visibility = android.view.View.VISIBLE
-                Toast.makeText(this, "GPX loaded: ${track.name}", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "No track data found in GPX", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error loading GPX: ${e.message}", Toast.LENGTH_LONG).show()
-            e.printStackTrace()
-        }
-    }
-
-    private fun displayTrackOnMap(track: GpxTrack) {
-        // Clear existing overlays
-        mapView.overlays.clear()
-
-        // Create polyline for the track
-        val polyline = Polyline().apply {
-            outlinePaint.color = getColor(android.R.color.holo_blue_dark)
-            outlinePaint.strokeWidth = 8f
-        }
-
-        val geoPoints = track.points.map { point ->
-            GeoPoint(point.latitude, point.longitude)
-        }
-        polyline.setPoints(geoPoints)
-        mapView.overlays.add(polyline)
-
-        // Add start marker
-        if (geoPoints.isNotEmpty()) {
-            val startMarker = Marker(mapView).apply {
-                position = geoPoints.first()
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "Start"
-                snippet = track.name
-            }
-            mapView.overlays.add(startMarker)
-
-            // Add end marker
-            if (geoPoints.size > 1) {
-                val endMarker = Marker(mapView).apply {
-                    position = geoPoints.last()
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    title = "End"
+        loadGpxButton.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                // Reading and parsing a long recording can take seconds, too long for the main thread
+                val track = withContext(Dispatchers.IO) {
+                    val inputStream = contentResolver.openInputStream(uri)
+                        ?: throw FileNotFoundException("Failed to open file")
+                    GpxParser().parse(inputStream)?.withDistances()
+                        // Also the grade fit along the route, which the ride needs from its first second
+                        ?.also { it.gradeProfile }
                 }
-                mapView.overlays.add(endMarker)
+
+                if (track != null && track.points.isNotEmpty()) {
+                    currentTrack = track
+                    routeMap.showRoute(track)
+                    updateTrackInfo(track)
+                    startWorkoutButton.visibility = android.view.View.VISIBLE
+                    Toast.makeText(this@GpxMapActivity, "GPX loaded: ${track.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@GpxMapActivity, "No track data found in GPX", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(this@GpxMapActivity, "Error loading GPX: ${e.message}", Toast.LENGTH_LONG).show()
+                e.printStackTrace()
+            } finally {
+                loadGpxButton.isEnabled = true
             }
         }
-
-        // Calculate bounding box and zoom to fit
-        if (geoPoints.isNotEmpty()) {
-            val bounds = calculateBounds(geoPoints)
-            mapView.zoomToBoundingBox(bounds, true, 100)
-        }
-
-        mapView.invalidate()
-    }
-
-    private fun calculateBounds(points: List<GeoPoint>): org.osmdroid.util.BoundingBox {
-        var minLat = Double.MAX_VALUE
-        var maxLat = -Double.MAX_VALUE
-        var minLon = Double.MAX_VALUE
-        var maxLon = -Double.MAX_VALUE
-
-        points.forEach { point ->
-            minLat = min(minLat, point.latitude)
-            maxLat = max(maxLat, point.latitude)
-            minLon = min(minLon, point.longitude)
-            maxLon = max(maxLon, point.longitude)
-        }
-
-        return org.osmdroid.util.BoundingBox(maxLat, maxLon, minLat, minLon)
     }
 
     private fun updateTrackInfo(track: GpxTrack) {
         val pointCount = track.points.size
-        val distance = calculateDistance(track.points)
+        val distance = track.totalDistance
         
         val info = buildString {
             append("Track: ${track.name}\n")
@@ -246,6 +140,14 @@ class GpxMapActivity : AppCompatActivity() {
                 val maxEle = elevations.maxOrNull() ?: 0.0
                 append("Elevation: ${"%.0f".format(minEle)}m - ${"%.0f".format(maxEle)}m\n")
             }
+            // The grade is interpolated across points without elevation; without any the ride is flat
+            if (elevations.size < pointCount * 0.95) {
+                append("Warning: no elevation for ${pointCount - elevations.size} of $pointCount points")
+                append(if (elevations.isEmpty()) ", the ride will be flat\n" else "\n")
+            }
+            // The map draws straight lines across the gaps, but they add no distance or climb
+            val segments = track.points.distinctBy { it.segment }.size
+            if (segments > 1) append("Segments: $segments, joined without the gaps between them\n")
             
             // Show data availability
             val hasHR = track.points.any { it.heartRate != null }
@@ -263,16 +165,6 @@ class GpxMapActivity : AppCompatActivity() {
         }
         
         trackInfoTextView.text = info
-    }
-
-    private fun calculateDistance(points: List<com.kickr.trainer.model.GpxTrackPoint>): Double {
-        var distance = 0.0
-        for (i in 0 until points.size - 1) {
-            val p1 = GeoPoint(points[i].latitude, points[i].longitude)
-            val p2 = GeoPoint(points[i + 1].latitude, points[i + 1].longitude)
-            distance += p1.distanceToAsDouble(p2)
-        }
-        return distance
     }
 
     override fun onResume() {

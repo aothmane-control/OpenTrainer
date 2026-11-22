@@ -16,6 +16,12 @@ object GattAttributes {
     val FITNESS_MACHINE_CONTROL_POINT: UUID = UUID.fromString("00002ad9-0000-1000-8000-00805f9b34fb")
     val INDOOR_BIKE_DATA: UUID = UUID.fromString("00002ad2-0000-1000-8000-00805f9b34fb")
     val SUPPORTED_RESISTANCE_LEVEL_RANGE: UUID = UUID.fromString("00002ad6-0000-1000-8000-00805f9b34fb")
+    val FITNESS_MACHINE_FEATURE: UUID = UUID.fromString("00002acc-0000-1000-8000-00805f9b34fb")
+    val FITNESS_MACHINE_STATUS: UUID = UUID.fromString("00002ada-0000-1000-8000-00805f9b34fb")
+
+    // User Data Service (rider weight used by the trainer's simulation)
+    val USER_DATA_SERVICE: UUID = UUID.fromString("0000181c-0000-1000-8000-00805f9b34fb")
+    val WEIGHT: UUID = UUID.fromString("00002a98-0000-1000-8000-00805f9b34fb")
     
     // Wahoo Trainer Service (proprietary for Kickr)
     val WAHOO_TRAINER_SERVICE: UUID = UUID.fromString("a026ee0b-0a7d-4ab3-97fa-f1500f9feb8b")

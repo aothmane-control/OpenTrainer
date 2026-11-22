@@ -17,12 +17,15 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.kickr.trainer.adapter.IntervalAdapter
+import com.kickr.trainer.bluetooth.Trainer
 import com.kickr.trainer.model.Workout
 import com.kickr.trainer.model.WorkoutInterval
 import com.kickr.trainer.model.WorkoutType
+import com.kickr.trainer.utils.SavedTrainerStorage
 import com.kickr.trainer.utils.SavedWorkoutStorage
 import com.kickr.trainer.utils.applyEdgeToEdgeInsets
 import kotlin.math.roundToInt
@@ -31,6 +34,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
 
     private lateinit var workoutNameEditText: TextInputEditText
     private lateinit var workoutTypeRadioGroup: RadioGroup
+    private lateinit var trainerLayout: TextInputLayout
+    private lateinit var trainerSelector: MaterialAutoCompleteTextView
     private lateinit var totalDurationEditText: TextInputEditText
     private lateinit var setDurationButton: Button
     private lateinit var intervalsCard: MaterialCardView
@@ -44,6 +49,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     private lateinit var cancelButton: Button
     private lateinit var saveWorkoutButton: Button
     private lateinit var loadWorkoutButton: Button
+    private lateinit var deleteWorkoutButton: Button
 
     private lateinit var intervalAdapter: IntervalAdapter
     private val intervals = mutableListOf<WorkoutInterval>()
@@ -51,9 +57,13 @@ class WorkoutSetupActivity : AppCompatActivity() {
     private var workoutType = WorkoutType.RESISTANCE
     
     private val savedWorkoutStorage by lazy { SavedWorkoutStorage(this) }
-    // Highest resistance level of the connected trainer
-    private val maxResistance by lazy { intent.getIntExtra("max_resistance_level", 100) }
-    private val minResistance by lazy { intent.getIntExtra("min_resistance_level", 0) } // Lowest level
+    // Without a connected trainer, workouts can be set up and saved but not started
+    private val trainerConnected by lazy { intent.getBooleanExtra("trainer_connected", true) }
+    // Trainers to take the resistance levels from when none is connected
+    private var savedTrainers = emptyList<Trainer>()
+    // Lowest and highest resistance level of the connected or the selected saved trainer
+    private var minResistance = 0
+    private var maxResistance = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,12 +73,20 @@ class WorkoutSetupActivity : AppCompatActivity() {
         initViews()
         setupRecyclerView()
         setupClickListeners()
+        if (trainerConnected) {
+            minResistance = intent.getIntExtra("min_resistance_level", 0)
+            maxResistance = intent.getIntExtra("max_resistance_level", 100)
+        } else {
+            setupTrainerSelector()
+        }
         updateIntervalInputHint()
     }
 
     private fun initViews() {
         workoutNameEditText = findViewById(R.id.workoutNameEditText)
         workoutTypeRadioGroup = findViewById(R.id.workoutTypeRadioGroup)
+        trainerLayout = findViewById(R.id.trainerLayout)
+        trainerSelector = findViewById(R.id.trainerSelector)
         totalDurationEditText = findViewById(R.id.totalDurationEditText)
         setDurationButton = findViewById(R.id.setDurationButton)
         intervalsCard = findViewById(R.id.intervalsCard)
@@ -82,6 +100,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
         cancelButton = findViewById(R.id.cancelButton)
         saveWorkoutButton = findViewById(R.id.saveWorkoutButton)
         loadWorkoutButton = findViewById(R.id.loadWorkoutButton)
+        deleteWorkoutButton = findViewById(R.id.deleteWorkoutButton)
     }
 
     private fun setupRecyclerView() {
@@ -142,11 +161,38 @@ class WorkoutSetupActivity : AppCompatActivity() {
         }
         
         loadWorkoutButton.setOnClickListener {
-            loadWorkout()
+            pickSavedWorkout(R.string.load_workout) { loadWorkoutByName(it) }
+        }
+
+        deleteWorkoutButton.setOnClickListener {
+            pickSavedWorkout(R.string.delete_workout) { confirmDeleteWorkout(it) }
         }
     }
     
+    // The trainer that connected last is selected first
+    private fun setupTrainerSelector() {
+        val storage = SavedTrainerStorage(this)
+        savedTrainers = storage.loadAll()
+        val trainer = storage.lastConnected ?: savedTrainers.firstOrNull() ?: return
+        trainerSelector.setSimpleItems(savedTrainers.map { it.name }.toTypedArray())
+        trainerSelector.setOnItemClickListener { _, _, position, _ ->
+            selectTrainer(savedTrainers[position])
+        }
+        selectTrainer(trainer)
+    }
+
+    private fun selectTrainer(trainer: Trainer) {
+        trainerSelector.setText(trainer.name, false)
+        minResistance = trainer.resistanceRange.minLevel
+        maxResistance = trainer.resistanceRange.maxLevel
+        updateIntervalInputHint()
+    }
+
     private fun updateIntervalInputHint() {
+        // Only resistance workouts depend on the trainer
+        trainerLayout.visibility = if (savedTrainers.isNotEmpty() && workoutType == WorkoutType.RESISTANCE) {
+            View.VISIBLE
+        } else View.GONE
         intervalValueLayout.hint = when (workoutType) {
             WorkoutType.RESISTANCE -> getString(R.string.resistance_percent_hint, minResistance, maxResistance)
             WorkoutType.POWER -> getString(R.string.power_watts_hint)
@@ -166,27 +212,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
             return
         }
 
-        if (value == null || value <= 0) {
-            val msg = when (workoutType) {
-                WorkoutType.RESISTANCE -> "Resistance level must be between 1 and $maxResistance"
-                WorkoutType.POWER -> "Power must be greater than 0 watts"
-            }
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        // Validate range based on workout type
-        val isValidValue = when (workoutType) {
-            WorkoutType.RESISTANCE -> value in 1..maxResistance
-            WorkoutType.POWER -> value in 1..1000
-        }
-        
-        if (!isValidValue) {
-            val msg = when (workoutType) {
-                WorkoutType.RESISTANCE -> "Resistance level must be between 1 and $maxResistance"
-                WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
-            }
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        if (value == null || !isValidTarget(value)) {
+            Toast.makeText(this, targetRangeMessage(), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -258,18 +285,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 
-                // Validate based on workout type
-                val isValid = when (workoutType) {
-                    WorkoutType.RESISTANCE -> value != null && value in minResistance..maxResistance
-                    WorkoutType.POWER -> value != null && value in 1..1000
-                }
-                
-                if (!isValid) {
-                    val errorMsg = when (workoutType) {
-                        WorkoutType.RESISTANCE -> "Resistance level must be between $minResistance and $maxResistance"
-                        WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
-                    }
-                    Toast.makeText(this, errorMsg, Toast.LENGTH_SHORT).show()
+                if (value == null || !isValidTarget(value)) {
+                    Toast.makeText(this, targetRangeMessage(), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 
@@ -288,8 +305,8 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 
                 // Update the interval based on workout type
                 val updatedInterval = when (workoutType) {
-                    WorkoutType.RESISTANCE -> WorkoutInterval(newDurationSeconds, value!!, 0)
-                    WorkoutType.POWER -> WorkoutInterval(newDurationSeconds, 0, value!!)
+                    WorkoutType.RESISTANCE -> WorkoutInterval(newDurationSeconds, value, 0)
+                    WorkoutType.POWER -> WorkoutInterval(newDurationSeconds, 0, value)
                 }
                 
                 intervals[position] = updatedInterval
@@ -301,6 +318,28 @@ class WorkoutSetupActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    // The same limits when adding, editing, saving and starting, so intervals entered in another
+    // trainer's levels, or before the workout type changed, can't be kept unnoticed
+    private fun isValidTarget(value: Int) = when (workoutType) {
+        WorkoutType.RESISTANCE -> value in minResistance..maxResistance
+        WorkoutType.POWER -> value in 1..1000
+    }
+
+    private fun targetRangeMessage() = when (workoutType) {
+        WorkoutType.RESISTANCE -> "Resistance level must be between $minResistance and $maxResistance"
+        WorkoutType.POWER -> "Power must be between 1 and 1000 watts"
+    }
+
+    // Names the first interval whose target is out of range, if any
+    private fun showInvalidInterval(): Boolean {
+        val index = intervals.indexOfFirst { interval ->
+            !isValidTarget(if (workoutType == WorkoutType.POWER) interval.power else interval.resistance)
+        }
+        if (index < 0) return false
+        Toast.makeText(this, "Interval ${index + 1}: ${targetRangeMessage()}", Toast.LENGTH_LONG).show()
+        return true
     }
 
     private fun updateRemainingTime() {
@@ -316,8 +355,9 @@ class WorkoutSetupActivity : AppCompatActivity() {
         val isComplete = currentTotal == totalDurationSeconds && intervals.isNotEmpty()
         val hasRemainingTime = currentTotal < totalDurationSeconds
         
-        startWorkoutButton.visibility = if (isComplete) View.VISIBLE else View.GONE
-        startWorkoutButton.isEnabled = isComplete
+        val canStart = isComplete && trainerConnected
+        startWorkoutButton.visibility = if (canStart) View.VISIBLE else View.GONE
+        startWorkoutButton.isEnabled = canStart
         
         // Disable and hide Add Interval UI when workout duration is fully allocated
         addIntervalButton.isEnabled = hasRemainingTime
@@ -328,6 +368,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
     }
 
     private fun startWorkout() {
+        if (showInvalidInterval()) return
         val workout = Workout(totalDurationSeconds, intervals.toList(), workoutType)
         if (!workout.isValid()) {
             Toast.makeText(this, "Invalid workout configuration", Toast.LENGTH_SHORT).show()
@@ -362,6 +403,7 @@ class WorkoutSetupActivity : AppCompatActivity() {
             Toast.makeText(this, "Please enter a workout name", Toast.LENGTH_SHORT).show()
             return
         }
+        if (showInvalidInterval()) return
         
         try {
             savedWorkoutStorage.save(workoutName, Workout(totalDurationSeconds, intervals.toList(), workoutType))
@@ -371,7 +413,9 @@ class WorkoutSetupActivity : AppCompatActivity() {
         }
     }
     
-    private fun loadWorkout() {
+    // Lists the saved workouts under the title of the button that opened it, Load Workout or
+    // Delete Workout, and hands on the one picked
+    private fun pickSavedWorkout(title: Int, onPick: (String) -> Unit) {
         try {
             val workoutNames = savedWorkoutStorage.names()
             
@@ -380,31 +424,14 @@ class WorkoutSetupActivity : AppCompatActivity() {
                 return
             }
             
-            // Show selection dialog with delete option
             AlertDialog.Builder(this)
-                .setTitle("Select Workout")
-                .setItems(workoutNames.toTypedArray()) { _, which ->
-                    val selectedName = workoutNames[which]
-                    showWorkoutOptionsDialog(selectedName)
-                }
-                .setNegativeButton("Cancel", null)
+                .setTitle(title)
+                .setItems(workoutNames.toTypedArray()) { _, which -> onPick(workoutNames[which]) }
+                .setNegativeButton(R.string.cancel, null)
                 .show()
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to load workouts: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-    }
-    
-    private fun showWorkoutOptionsDialog(name: String) {
-        AlertDialog.Builder(this)
-            .setTitle(name)
-            .setItems(arrayOf("Load", "Delete")) { _, which ->
-                when (which) {
-                    0 -> loadWorkoutByName(name)
-                    1 -> confirmDeleteWorkout(name)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
     
     private fun confirmDeleteWorkout(name: String) {

@@ -24,6 +24,10 @@ data class ResistanceRange(val minimum: Int, val maximum: Int, val increment: In
         // Used when the trainer doesn't report a range: levels 0-100, sent as 0-1000 like before
         val DEFAULT = ResistanceRange(0, 1000, 10)
 
+        // Null for an empty range; an increment of 0 counts as 1
+        fun of(minimum: Int, maximum: Int, increment: Int): ResistanceRange? =
+            if (maximum > minimum) ResistanceRange(minimum, maximum, increment.coerceAtLeast(1)) else null
+
         // SINT16 minimum, SINT16 maximum, UINT16 minimum increment, all little-endian
         fun parse(value: ByteArray): ResistanceRange? {
             if (value.size < 6) return null
@@ -31,8 +35,7 @@ data class ResistanceRange(val minimum: Int, val maximum: Int, val increment: In
             val minimum = buffer.getShort().toInt()
             val maximum = buffer.getShort().toInt()
             val increment = buffer.getShort().toInt() and 0xFFFF
-            if (maximum <= minimum) return null
-            return ResistanceRange(minimum, maximum, increment.coerceAtLeast(1))
+            return of(minimum, maximum, increment)
         }
     }
 }

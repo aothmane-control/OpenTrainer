@@ -13,17 +13,26 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserException
 import java.io.IOException
 import java.io.InputStream
+import kotlin.math.roundToInt
 
-class GpxParser {
+class GpxParser(
+    // Unit tests pass a JVM parser and their own warnings, since android.util only exists on the device
+    private val newPullParser: () -> XmlPullParser = { Xml.newPullParser() },
+    private val warn: (String) -> Unit = { Log.w(TAG, it) }
+) {
     
     companion object {
         private const val TAG = "GpxParser"
     }
+
+    // Counts <trkseg> and <rte> elements, so the track knows where its segments begin
+    private var segment = 0
     
     @Throws(XmlPullParserException::class, IOException::class)
     fun parse(inputStream: InputStream): GpxTrack? {
+        segment = 0
         inputStream.use { stream ->
-            val parser: XmlPullParser = Xml.newPullParser()
+            val parser: XmlPullParser = newPullParser()
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             parser.setInput(stream, null)
             parser.nextTag()
@@ -49,14 +58,15 @@ class GpxParser {
                 "trk" -> {
                     val track = readTrack(parser)
                     if (track != null) {
-                        trackName = track.first
+                        // The first track names the file, not the last one
+                        if (points.isEmpty()) trackName = track.first
                         points.addAll(track.second)
                     }
                 }
                 "rte" -> {
                     val route = readRoute(parser)
                     if (route != null) {
-                        routeName = route.first
+                        if (routePoints.isEmpty()) routeName = route.first
                         routePoints.addAll(route.second)
                     }
                 }
@@ -76,6 +86,7 @@ class GpxParser {
     @Throws(XmlPullParserException::class, IOException::class)
     private fun readRoute(parser: XmlPullParser): Pair<String, List<GpxTrackPoint>>? {
         parser.require(XmlPullParser.START_TAG, null, "rte")
+        segment++
         var name = "Unnamed Track"
         val points = mutableListOf<GpxTrackPoint>()
         
@@ -119,6 +130,7 @@ class GpxParser {
     private fun readTrackSegment(parser: XmlPullParser): List<GpxTrackPoint> {
         val points = mutableListOf<GpxTrackPoint>()
         parser.require(XmlPullParser.START_TAG, null, "trkseg")
+        segment++
         
         while (parser.next() != XmlPullParser.END_TAG) {
             if (parser.eventType != XmlPullParser.START_TAG) {
@@ -139,8 +151,8 @@ class GpxParser {
     private fun readTrackPoint(parser: XmlPullParser, tag: String): GpxTrackPoint? {
         parser.require(XmlPullParser.START_TAG, null, tag)
         
-        val lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull()
-        val lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull()
+        val lat = parser.getAttributeValue(null, "lat")?.toFiniteDoubleOrNull()
+        val lon = parser.getAttributeValue(null, "lon")?.toFiniteDoubleOrNull()
         
         var elevation: Double? = null
         var time: String? = null
@@ -154,7 +166,7 @@ class GpxParser {
             }
             
             when (parser.name) {
-                "ele" -> elevation = readText(parser).toDoubleOrNull()
+                "ele" -> elevation = readText(parser).toFiniteDoubleOrNull()
                 "time" -> time = readText(parser)
                 "extensions" -> {
                     val extensions = readExtensions(parser)
@@ -169,13 +181,17 @@ class GpxParser {
         // A point without valid coordinates would otherwise be placed at 0,0
         // and add thousands of kilometers to the track distance
         if (lat == null || lon == null) {
-            Log.w(TAG, "Skipping <$tag> without valid lat/lon")
+            warn("Skipping <$tag> without valid lat/lon")
             return null
         }
         
-        return GpxTrackPoint(lat, lon, elevation, time, heartRate, cadence, power)
+        return GpxTrackPoint(lat, lon, elevation, time, heartRate, cadence, power, segment = segment)
     }
     
+    // Kotlin also reads "NaN" and "Infinity" as numbers; in a GPX file they are as unreadable as
+    // any other text, and would turn every distance, grade and speed computed from them into NaN
+    private fun String.toFiniteDoubleOrNull() = toDoubleOrNull()?.takeIf { it.isFinite() }
+
     @Throws(XmlPullParserException::class, IOException::class)
     // Descends into container elements such as Garmin's <gpxtpx:TrackPointExtension>,
     // where hr and cad are nested one level below <extensions>
@@ -189,17 +205,18 @@ class GpxParser {
             }
             
             // Namespace processing is off, so names keep their prefix (e.g. "gpxtpx:hr")
-            when (parser.name.substringAfter(':').lowercase()) {
-                "hr", "heartrate" -> {
-                    extensions["hr"] = readText(parser).trim().toIntOrNull() ?: 0
-                }
-                "cad", "cadence" -> {
-                    extensions["cad"] = readText(parser).trim().toIntOrNull() ?: 0
-                }
-                "power", "powerinwatts", "watts" -> {
-                    extensions["power"] = readText(parser).trim().toIntOrNull() ?: 0
-                }
-                else -> readExtensions(parser, extensions)
+            val key = when (parser.name.substringAfter(':').lowercase()) {
+                "hr", "heartrate" -> "hr"
+                "cad", "cadence" -> "cad"
+                "power", "powerinwatts", "watts" -> "power"
+                else -> null
+            }
+            if (key == null) {
+                readExtensions(parser, extensions)
+            } else {
+                // Unreadable values stay missing; 0 would be a real reading. Some apps write decimals.
+                readText(parser).trim().toFiniteDoubleOrNull()?.roundToInt()
+                    ?.let { extensions[key] = it }
             }
         }
         

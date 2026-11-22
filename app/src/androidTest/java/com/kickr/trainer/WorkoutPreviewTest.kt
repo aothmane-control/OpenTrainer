@@ -6,7 +6,6 @@ import android.content.SharedPreferences
 import android.os.SystemClock
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -108,10 +107,10 @@ class WorkoutPreviewTest {
 
     private fun assertCommonPreview(activity: MainActivity) {
         assertNull(activity.supportActionBar?.subtitle)
-        for (id in listOf(R.id.scanButton, R.id.workoutLauncher, R.id.disconnectButton,
-            R.id.viewGpxButton, R.id.compactLayoutCheckBox)) {
+        for (id in listOf(R.id.scanButton, R.id.workoutLauncher, R.id.disconnectButton, R.id.viewGpxButton)) {
             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
         }
+        assertFalse("Preview can't change the saved layout", activity.compactLayoutMenuItem.isVisible)
         for (id in listOf(R.id.powerChart, R.id.speedChart, R.id.workoutProfileChart)) {
             assertTrue(activity.findViewById<LineChart>(id).data.entryCount > 1)
         }
@@ -134,9 +133,8 @@ class WorkoutPreviewTest {
                 assertEquals(activity.getString(R.string.disconnected), text(activity, R.id.connectionStatusTextView))
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.workoutStatusCard).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.scanButton).visibility)
-                val checkbox = activity.findViewById<CheckBox>(R.id.compactLayoutCheckBox)
-                assertEquals(View.VISIBLE, checkbox.visibility)
-                assertEquals(expectedCompactPreference, checkbox.isChecked)
+                assertTrue(activity.compactLayoutMenuItem.isVisible)
+                assertEquals(expectedCompactPreference, activity.compactLayoutMenuItem.isChecked)
             }
         }
     }
@@ -150,7 +148,7 @@ class WorkoutPreviewTest {
                 if (preferences.contains("compact_workout_layout")) {
                     previous = preferences.getBoolean("compact_workout_layout", false)
                 }
-                activity.findViewById<CheckBox>(R.id.compactLayoutCheckBox).isChecked = enabled
+                preferences.edit().putBoolean("compact_workout_layout", enabled).commit()
             }
         }
         try {

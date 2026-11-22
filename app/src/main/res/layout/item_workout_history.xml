@@ -37,6 +37,7 @@
                 android:layout_height="wrap_content"
                 android:text="GPX"
                 android:textSize="12sp"
+                android:textColor="?attr/colorOnPrimaryContainer"
                 android:background="?attr/colorPrimaryContainer"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"

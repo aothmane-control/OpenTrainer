@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic flat route for measuring how the trainer applies the wind resistance coefficient Cw
+  (review issue #8), due north from 49.0000 N 7.0000 E.
+  21 points every 0.0045 degrees of latitude (about 500 m), all at 200.0 m: 0 % for about 10.0 km.
+  The elevations are clean, so the app fits the grade over 20 m and sends 0.00 % throughout.
+  Expected in the app: 21 points, about 10.0 km, elevation 200-200 m.
+
+  On 0 % the trainer's force is m g Crr + k Cw v^2 at its own speed v, so steady blocks give
+  k = (P / v - m g Crr) / (Cw v^2): 1 if it applies Cw v^2, 0.5 if 1/2 Cw v^2. With Cw 0.51,
+  Crr 0.004, no wind and 81 kg, 25 km/h takes about 193 W for k = 1 and 107 W for k = 0.5.
+  Measured on a KICKR CORE on 2026-11-21: 71.4 W at 20.8 km/h (k = 0.54, 271 s) and 305.6 W
+  at 36.9 km/h (k = 0.50, 14 s), so it applies 1/2 Cw v^2.
+-->
+<gpx version="1.1" creator="OpenTrainer test data"
+    xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>OpenTrainer flat test</name>
+    <trkseg>
+      <trkpt lat="49.0000" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0045" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0090" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0135" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0180" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0225" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0270" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0315" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0360" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0405" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0450" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0495" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0540" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0585" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0630" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0675" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0720" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0765" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0810" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0855" lon="7.0000"><ele>200.0</ele></trkpt>
+      <trkpt lat="49.0900" lon="7.0000"><ele>200.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

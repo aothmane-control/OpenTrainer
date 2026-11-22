@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic route for testing OpenTrainer, due north from 49.0000 N 7.0000 E.
+  21 valid points every 0.00045 degrees of latitude (about 50 m), four sections of about 250 m:
+    points  0-5   +3 %  (200.0 m to 207.5 m)
+    points  5-10  +6 %  (207.5 m to 222.5 m)
+    points 10-15   0 %  (222.5 m)
+    points 15-20  -3 %  (222.5 m to 215.0 m)
+  The elevations are clean, so the app fits the grade over 20 m and each change ramps over 20 m.
+  Expected in the app: 21 points, about 1.0 km, elevation 200-223 m, data HR, Cadence, Power.
+  The point without lat after point 10 must be skipped; if it were used, the maximum
+  elevation would show 999 m.
+-->
+<gpx version="1.1" creator="OpenTrainer test data"
+    xmlns="http://www.topografix.com/GPX/1/1"
+    xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+  <trk>
+    <name>OpenTrainer grade test</name>
+    <trkseg>
+      <trkpt lat="49.00000" lon="7.0000"><ele>200.0</ele><time>2026-11-19T08:00:00Z</time><extensions><power>210</power><gpxtpx:TrackPointExtension><gpxtpx:hr>130</gpxtpx:hr><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00045" lon="7.0000"><ele>201.5</ele><time>2026-11-19T08:00:09Z</time><extensions><power>210</power><gpxtpx:TrackPointExtension><gpxtpx:hr>130</gpxtpx:hr><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00090" lon="7.0000"><ele>203.0</ele><time>2026-11-19T08:00:18Z</time><extensions><power>210</power><gpxtpx:TrackPointExtension><gpxtpx:hr>130</gpxtpx:hr><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00135" lon="7.0000"><ele>204.5</ele><time>2026-11-19T08:00:27Z</time><extensions><power>210</power><gpxtpx:TrackPointExtension><gpxtpx:hr>130</gpxtpx:hr><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00180" lon="7.0000"><ele>206.0</ele><time>2026-11-19T08:00:36Z</time><extensions><power>210</power><gpxtpx:TrackPointExtension><gpxtpx:hr>130</gpxtpx:hr><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00225" lon="7.0000"><ele>207.5</ele><time>2026-11-19T08:00:45Z</time><extensions><power>290</power><gpxtpx:TrackPointExtension><gpxtpx:hr>150</gpxtpx:hr><gpxtpx:cad>80</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00270" lon="7.0000"><ele>210.5</ele><time>2026-11-19T08:00:54Z</time><extensions><power>290</power><gpxtpx:TrackPointExtension><gpxtpx:hr>150</gpxtpx:hr><gpxtpx:cad>80</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00315" lon="7.0000"><ele>213.5</ele><time>2026-11-19T08:01:03Z</time><extensions><power>290</power><gpxtpx:TrackPointExtension><gpxtpx:hr>150</gpxtpx:hr><gpxtpx:cad>80</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00360" lon="7.0000"><ele>216.5</ele><time>2026-11-19T08:01:12Z</time><extensions><power>290</power><gpxtpx:TrackPointExtension><gpxtpx:hr>150</gpxtpx:hr><gpxtpx:cad>80</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00405" lon="7.0000"><ele>219.5</ele><time>2026-11-19T08:01:21Z</time><extensions><power>290</power><gpxtpx:TrackPointExtension><gpxtpx:hr>150</gpxtpx:hr><gpxtpx:cad>80</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00450" lon="7.0000"><ele>222.5</ele><time>2026-11-19T08:01:30Z</time><extensions><power>150</power><gpxtpx:TrackPointExtension><gpxtpx:hr>125</gpxtpx:hr><gpxtpx:cad>90</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <!-- Invalid: no lat. Must be skipped, otherwise it adds a 999 m spike. -->
+      <trkpt lon="7.0000"><ele>999</ele><time>2026-11-19T08:01:35Z</time></trkpt>
+      <trkpt lat="49.00495" lon="7.0000"><ele>222.5</ele><time>2026-11-19T08:01:39Z</time><extensions><power>150</power><gpxtpx:TrackPointExtension><gpxtpx:hr>125</gpxtpx:hr><gpxtpx:cad>90</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00540" lon="7.0000"><ele>222.5</ele><time>2026-11-19T08:01:48Z</time><extensions><power>150</power><gpxtpx:TrackPointExtension><gpxtpx:hr>125</gpxtpx:hr><gpxtpx:cad>90</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00585" lon="7.0000"><ele>222.5</ele><time>2026-11-19T08:01:57Z</time><extensions><power>150</power><gpxtpx:TrackPointExtension><gpxtpx:hr>125</gpxtpx:hr><gpxtpx:cad>90</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00630" lon="7.0000"><ele>222.5</ele><time>2026-11-19T08:02:06Z</time><extensions><power>150</power><gpxtpx:TrackPointExtension><gpxtpx:hr>125</gpxtpx:hr><gpxtpx:cad>90</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00675" lon="7.0000"><ele>222.5</ele><time>2026-11-19T08:02:15Z</time><extensions><power>60</power><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr><gpxtpx:cad>70</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00720" lon="7.0000"><ele>221.0</ele><time>2026-11-19T08:02:24Z</time><extensions><power>60</power><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr><gpxtpx:cad>70</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00765" lon="7.0000"><ele>219.5</ele><time>2026-11-19T08:02:33Z</time><extensions><power>60</power><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr><gpxtpx:cad>70</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00810" lon="7.0000"><ele>218.0</ele><time>2026-11-19T08:02:42Z</time><extensions><power>60</power><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr><gpxtpx:cad>70</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00855" lon="7.0000"><ele>216.5</ele><time>2026-11-19T08:02:51Z</time><extensions><power>60</power><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr><gpxtpx:cad>70</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="49.00900" lon="7.0000"><ele>215.0</ele><time>2026-11-19T08:03:00Z</time><extensions><power>60</power><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr><gpxtpx:cad>70</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
