@@ -1,4 +1,4 @@
-    .gradle/
+.gradle/
 .idea/
 local.properties
 *.iml
@@ -21,3 +21,5 @@ gradle/wrapper/gradle-wrapper.jar
 *.mp4
 keystore.properties
 *.jks
+# Where Android Studio puts signed release builds
+app/release/

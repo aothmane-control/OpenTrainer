@@ -1810,7 +1810,7 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("About OpenTrainer")
             .setMessage("""
-                OpenTrainer v2.0
+                OpenTrainer v${BuildConfig.VERSION_NAME}
                 
                 A free and open-source cycling training app for Wahoo Kickr and compatible smart trainers.
                 
