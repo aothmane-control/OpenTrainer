@@ -1822,7 +1822,10 @@ class MainActivity : AppCompatActivity() {
                 • Custom resistance workouts
                 • GPX-based elevation workouts
                 • Workout history and analytics
-                • 100% offline - no data collection
+                • No data collection
+                
+                Internet use:
+                Resistance and power workouts work fully offline. The internet is only used to load OpenStreetMap map tiles, on the GPX screen and during GPX rides.
                 
                 This application is open source and respects your privacy.
             """.trimIndent())
